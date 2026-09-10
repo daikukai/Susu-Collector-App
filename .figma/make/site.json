@@ -1,0 +1,11 @@
+{
+  "title": "mysusu",
+  "description": "This web application streamlines project collaboration by allowing users to update and manage design mockups efficiently, enhancing workflow and productivity.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
