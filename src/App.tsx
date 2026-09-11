@@ -333,46 +333,46 @@ function TodayTab({ state, setState, goCollect, goFinance }: {
         </div>
       </Card>
 
-      {/* Collector earnings — static calculation from fee % */}
-      {g.feeType === "percentage" && g.feeValue > 0 && (
-        <Card className="p-4 flex items-center justify-between border border-emerald-100">
-          <div>
-            <p className="text-xs text-gray-400">Your collector's earnings</p>
-            <p className="text-xs text-gray-500 mt-0.5">{g.feeValue}% of all contributions collected</p>
-          </div>
-          <p className="text-xl font-bold text-emerald-600">{fmt(t.commission, g.currency)}</p>
-        </Card>
-      )}
-
-      {/* Alerts */}
-      {openDisputes > 0 && (
-        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
-          <span className="text-amber-500 text-lg">⚠️</span>
-          <div>
-            <p className="text-sm font-semibold text-amber-700">{openDisputes} open dispute{openDisputes > 1 ? "s" : ""}</p>
-            <p className="text-xs text-amber-600">Resolve before closing the cycle or making payouts</p>
-          </div>
-        </div>
-      )}
-
-      {/* Daily workflow */}
       <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Today's workflow</p>
-        <div className="space-y-2">
-          {steps.map((step) => (
-            <Card key={step.n} className={`border ${step.done ? "border-emerald-100" : "border-gray-100"}`}>
-              <div className="flex items-center gap-3 p-4">
-                <StepBadge n={step.n} done={step.done} />
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-semibold ${step.done ? "text-gray-400 line-through" : "text-gray-800"}`}>{step.label}</p>
-                  <p className={`text-xs mt-0.5 ${step.done ? "text-gray-300" : "text-gray-400"}`}>{step.sub}</p>
-                </div>
-                <button onClick={step.action} className={`flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all active:scale-[0.97] ${step.done ? "bg-gray-100 text-gray-400" : "bg-emerald-600 text-white active:bg-emerald-700"}`}>
-                  {step.actionLabel}
-                </button>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {/* Collector earnings — static calculation from fee % */}
+        {g.feeType === "percentage" && g.feeValue > 0 && (
+          <Card className="p-4 flex items-center justify-between border border-emerald-100">
+            <div>
+              <p className="text-xs text-gray-400">Your collector's earnings</p>
+              <p className="text-xs text-gray-500 mt-0.5">{g.feeValue}% of all contributions collected</p>
+            </div>
+            <p className="text-xl font-bold text-emerald-600">{fmt(t.commission, g.currency)}</p>
+          </Card>
+        )}
+
+        {/* Alerts */}
+        {openDisputes > 0 && (
+          <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
+            <span className="text-amber-500 text-lg">⚠️</span>
+            <div>
+              <p className="text-sm font-semibold text-amber-700">{openDisputes} open dispute{openDisputes > 1 ? "s" : ""}</p>
+              <p className="text-xs text-amber-600">Resolve before closing the cycle or making payouts</p>
+            </div>
+          </div>
+        )}
+
+        {/* Daily workflow */}
+        {steps.map((step) => (
+          <Card key={step.n} className={`border ${step.done ? "border-emerald-100" : "border-gray-100"}`}>
+            <div className="flex items-center gap-3 p-4">
+              <StepBadge n={step.n} done={step.done} />
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm font-semibold ${step.done ? "text-gray-400 line-through" : "text-gray-800"}`}>{step.label}</p>
+                <p className={`text-xs mt-0.5 ${step.done ? "text-gray-300" : "text-gray-400"}`}>{step.sub}</p>
               </div>
-            </Card>
-          ))}
+              <button onClick={step.action} className={`flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all active:scale-[0.97] ${step.done ? "bg-gray-100 text-gray-400" : "bg-emerald-600 text-white active:bg-emerald-700"}`}>
+                {step.actionLabel}
+              </button>
+            </div>
+          </Card>
+        ))}
         </div>
       </div>
     </div>
@@ -474,7 +474,7 @@ function CollectTab({ state, setState, initialSub = "Roster", goHome }: {
       <InlineTab tabs={["Roster", "Record Payment", "Correct Entry"]} active={sub} onChange={setSub} />
 
       {sub === "Roster" && (
-        <div className="space-y-3">
+        <div className="space-y-3 md:max-w-lg md:mx-auto">
           {/* Day cycle dashboard */}
           <Card className="overflow-hidden">
             <div className="bg-gradient-to-br from-emerald-600 to-emerald-700 p-4 text-white">
@@ -542,7 +542,7 @@ function CollectTab({ state, setState, initialSub = "Roster", goHome }: {
       )}
 
       {sub === "Record Payment" && (
-        <div className="space-y-3">
+        <div className="space-y-3 md:max-w-lg md:mx-auto">
           <Card className="p-3 bg-blue-50 border border-blue-100">
             <p className="text-xs text-blue-700 font-medium">Use for non-standard payments — different amounts, mobile money, or partial arrears. SMS receipt is sent automatically.</p>
           </Card>
@@ -570,7 +570,7 @@ function CollectTab({ state, setState, initialSub = "Roster", goHome }: {
       )}
 
       {sub === "Correct Entry" && (
-        <div className="space-y-3">
+        <div className="space-y-3 md:max-w-lg md:mx-auto">
           <Card className="p-3 bg-amber-50 border border-amber-100">
             <p className="text-xs text-amber-700 font-medium">Fix a recorded payment amount or correct a member name. Original entry is kept in the audit trail.</p>
           </Card>
@@ -659,7 +659,7 @@ function MembersTab({ state, setState }: { state: AppState; setState: (s: AppSta
       </div>
 
       {showAdd && (
-        <Card className="p-4 border border-emerald-100">
+        <Card className="p-4 border border-emerald-100 md:max-w-lg">
           <p className="text-sm font-semibold text-gray-800 mb-3">New member</p>
           <FieldWrap label="Full name" error={errors.name}><Inp value={name} onChange={(v) => { setName(v); setErrors({ ...errors, name: "" }); }} placeholder="e.g. Grace Weah" /></FieldWrap>
           <FieldWrap label="Phone number" error={errors.phone}><Inp value={phone} onChange={(v) => { setPhone(v); setErrors({ ...errors, phone: "" }); }} placeholder="+231 88 000 0000" /></FieldWrap>
@@ -667,25 +667,21 @@ function MembersTab({ state, setState }: { state: AppState; setState: (s: AppSta
         </Card>
       )}
 
-      <Card className="overflow-hidden">
-        <div className="grid grid-cols-[90px_1fr_1fr_36px] gap-x-2 px-3 py-2 bg-gray-50 border-b border-gray-100">
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">ID</p>
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Name</p>
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Phone</p>
-          <span />
-        </div>
-        {members.length === 0 && (
-          <div className="p-6 text-center">
-            <p className="text-sm text-gray-400">No members yet.</p>
-            <p className="text-xs text-gray-300 mt-1">Add your first member above.</p>
-          </div>
-        )}
-        {members.map((m, i) => (
-          <div key={m.id}>
-            <div className={`grid grid-cols-[90px_1fr_1fr_36px] gap-x-2 items-center px-3 py-3 ${i < members.length - 1 ? "border-b border-gray-50" : ""}`}>
-              <p className="text-[10px] font-mono text-gray-400 truncate">{m.id}</p>
-              <p className="text-sm font-medium text-gray-800 truncate">{m.name}</p>
-              <p className="text-xs text-gray-500 truncate">{m.phone}</p>
+      {members.length === 0 && (
+        <Card className="p-6 text-center">
+          <p className="text-sm text-gray-400">No members yet.</p>
+          <p className="text-xs text-gray-300 mt-1">Add your first member above.</p>
+        </Card>
+      )}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+        {members.map((m) => (
+          <Card key={m.id} className="overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-800 truncate">{m.name}</p>
+                <p className="text-xs text-gray-500 truncate">{m.phone}</p>
+                <p className="text-[10px] font-mono text-gray-400 truncate mt-0.5">{m.id}</p>
+              </div>
               <button onClick={() => editId === m.id ? setEditId(null) : openEdit(m)} className="flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 hover:bg-emerald-50 hover:text-emerald-700 text-gray-400 transition-all active:scale-95">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </button>
@@ -698,9 +694,9 @@ function MembersTab({ state, setState }: { state: AppState; setState: (s: AppSta
                 <div className="flex gap-2"><PrimaryBtn onClick={saveEdit} className="flex-1">Save</PrimaryBtn><GhostBtn onClick={() => setEditId(null)} className="flex-1">Cancel</GhostBtn></div>
               </div>
             )}
-          </div>
+          </Card>
         ))}
-      </Card>
+      </div>
     </div>
   );
 }
@@ -801,9 +797,9 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
               <Card className="p-3 bg-blue-50 border border-blue-100">
                 <p className="text-xs text-blue-700 font-medium">Full outstanding balance is paid here. For partial payments, use Collect → Record Payment.</p>
               </Card>
-              <Card>
-                {arrearsList.map((x, i) => (
-                  <div key={x.m.id} className={`p-3.5 ${i < arrearsList.length - 1 ? "border-b border-gray-50" : ""}`}>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {arrearsList.map((x) => (
+                  <Card key={x.m.id} className="p-3.5">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm font-semibold text-gray-800">{x.m.name}</p>
@@ -816,9 +812,9 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
                         Pay in full · {fmt(x.s.outstanding, g.currency)}
                       </button>
                     </div>
-                  </div>
+                  </Card>
                 ))}
-              </Card>
+              </div>
               <GhostBtn onClick={sendReminders}>Send reminder SMS to {arrearsList.length} member{arrearsList.length > 1 ? "s" : ""}</GhostBtn>
               {remindConfirm && <Toast msg={remindConfirm} />}
             </>
@@ -849,13 +845,13 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
           </FieldWrap>
 
           {/* Members payout list */}
-          <Card>
-            {members.map((m, i) => {
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {members.map((m) => {
               const amount = memberPayout(state, m);
               const paid = hasPayout(m.id);
               const hasDispute = openDisputeMembers.has(m.id);
               return (
-                <div key={m.id} className={`p-3.5 ${i < members.length - 1 ? "border-b border-gray-50" : ""}`}>
+                <Card key={m.id} className="p-3.5">
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="flex items-center gap-2">
@@ -871,11 +867,11 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
                         : <button onClick={() => recordPayout(m.id, amount)} className="text-xs font-semibold text-white bg-emerald-600 px-3 py-1.5 rounded-lg active:bg-emerald-700 transition-all">Record payout</button>
                     }
                   </div>
-                </div>
+                </Card>
               );
             })}
-            {members.length === 0 && <p className="p-4 text-sm text-gray-400 text-center">No members yet.</p>}
-          </Card>
+            {members.length === 0 && <Card className="p-4"><p className="text-sm text-gray-400 text-center">No members yet.</p></Card>}
+          </div>
 
           {/* Collector's own fee payout */}
           {g.feeType === "percentage" && g.feeValue > 0 && (
@@ -1014,19 +1010,21 @@ function DisputesSub({ state, setState, g, onBack }: { state: AppState; setState
     <div className="space-y-3">
       <BackBtn onClick={onBack} /><p className="text-base font-semibold text-gray-800">Disputes · {disputes.filter((d) => d.status === "open").length} open</p>
       <Card>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         {disputes.map((d, i) => {
           const m = state.members.find((x) => x.id === d.memberId);
           return (
-            <div key={d.id} className={`p-3.5 ${i < disputes.length - 1 ? "border-b border-gray-50" : ""}`}>
+            <div key={d.id} className={`p-3.5 ${i < disputes.length - 1 ? "border-b border-gray-50 md:border-b-0 md:odd:border-r" : ""} md:border-gray-50`}>
               <div className="flex items-center justify-between mb-1"><p className="text-sm font-semibold text-gray-800">{m?.name}</p><Badge color={d.status === "open" ? "amber" : "green"}>{d.status}</Badge></div>
               <p className="text-xs text-gray-500 mb-2">{d.description}</p>
               {d.status === "open" && <button onClick={() => resolve(d.id)} className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg active:bg-emerald-100">Mark resolved</button>}
             </div>
           );
         })}
+        </div>
         {disputes.length === 0 && <p className="p-4 text-sm text-gray-400 text-center">No disputes yet.</p>}
       </Card>
-      <Card className="p-4">
+      <Card className="p-4 md:max-w-lg">
         <p className="text-sm font-semibold text-gray-800 mb-3">Log a dispute</p>
         <FieldWrap label="Member"><Sel value={dpMember} onChange={setDpMember}>{members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</Sel></FieldWrap>
         <FieldWrap label="Description" error={dpErr}><Inp value={dpDesc} onChange={(v) => { setDpDesc(v); setDpErr(""); }} placeholder="What is being disputed?" /></FieldWrap>
@@ -1071,7 +1069,7 @@ function CycleSub({ state, setState, g, t, onBack }: { state: AppState; setState
   ];
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 md:max-w-lg">
       <BackBtn onClick={onBack} />
       <p className="text-base font-semibold text-gray-800">Close &amp; Archive Cycle {g.cycleNumber}</p>
       <Card className="p-3 bg-amber-50 border border-amber-100">
@@ -1130,32 +1128,36 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
       <BackBtn onClick={onBack} /><p className="text-base font-semibold text-gray-800">Groups</p>
 
       {activeGroups.length > 0 && (
-        <Card>
-          {activeGroups.map((gr, i) => (
-            <div key={gr.id} className={`flex items-center justify-between p-3.5 ${i < activeGroups.length - 1 ? "border-b border-gray-50" : ""}`}>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {activeGroups.map((gr) => (
+            <Card key={gr.id} className="p-3.5">
+              <div className="flex items-center justify-between">
               <div><p className="text-sm font-semibold text-gray-800">{gr.name}</p><p className="text-xs text-gray-400">{state.members.filter((m) => m.groupId === gr.id).length} members · {gr.frequency} · cycle {gr.cycleNumber}{gr.endDate ? ` · ends ${gr.endDate}` : ""}</p></div>
               {gr.id === state.activeGroupId ? <Badge color="green">Active</Badge> : <button onClick={() => setState({ ...state, activeGroupId: gr.id })} className="text-xs font-semibold text-emerald-600">Switch</button>}
-            </div>
+              </div>
+            </Card>
           ))}
-        </Card>
+        </div>
       )}
 
       {archivedGroups.length > 0 && (
         <div>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Archived</p>
-          <Card>
-            {archivedGroups.map((gr, i) => (
-              <div key={gr.id} className={`flex items-center justify-between p-3.5 ${i < archivedGroups.length - 1 ? "border-b border-gray-50" : ""}`}>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {archivedGroups.map((gr) => (
+              <Card key={gr.id} className="p-3.5">
+                <div className="flex items-center justify-between">
                 <div><p className="text-sm font-medium text-gray-500">{gr.name}</p><p className="text-xs text-gray-300">{state.members.filter((m) => m.groupId === gr.id).length} members · closed</p></div>
                 <Badge color="gray">Archived</Badge>
-              </div>
+                </div>
+              </Card>
             ))}
-          </Card>
+          </div>
         </div>
       )}
 
       <p className="text-sm font-semibold text-gray-700 pt-1">Create a new group</p>
-      <Card className="p-4 space-y-0">
+      <Card className="p-4 space-y-0 md:max-w-lg">
         <FieldWrap label="Group name" error={gErrors.name}><Inp value={gName} onChange={(v) => { setGName(v); setGErrors({ ...gErrors, name: "" }); }} placeholder="e.g. Church Savings Group" /></FieldWrap>
         <div className="flex gap-2">
           <div className="flex-1"><FieldWrap label={`Amount (${gCur})`} error={gErrors.amount}><Inp value={gAmt} onChange={(v) => { setGAmt(v); setGErrors({ ...gErrors, amount: "" }); }} placeholder="500" /></FieldWrap></div>
@@ -1193,13 +1195,13 @@ function SmsSub({ state, setState, onBack }: { state: AppState; setState: (s: Ap
   return (
     <div className="space-y-3">
       <BackBtn onClick={onBack} /><p className="text-base font-semibold text-gray-800">SMS Log</p>
-      <Card>
-        {list.map((s, i) => {
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {list.map((s) => {
           const m = state.members.find((x) => x.id === s.memberId);
           const name = s.memberId === "collector" ? state.collectorName + " (collector)" : (m?.name || "?");
           return (
-            <div key={s.id}>
-              <button onClick={() => setOpenId(openId === s.id ? null : s.id)} className={`w-full flex items-center justify-between p-3.5 text-left transition-colors hover:bg-gray-50 ${i < list.length - 1 ? "border-b border-gray-50" : ""}`}>
+            <Card key={s.id} className="overflow-hidden">
+              <button onClick={() => setOpenId(openId === s.id ? null : s.id)} className="w-full flex items-center justify-between p-3.5 text-left transition-colors hover:bg-gray-50">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-800 truncate">{name}</p>
                   <p className="text-xs text-gray-400 mt-0.5">{s.kind} · {fmtTimestamp(s.timestamp)}</p>
@@ -1216,11 +1218,11 @@ function SmsSub({ state, setState, onBack }: { state: AppState; setState: (s: Ap
                   <pre className="text-xs text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">{s.content}</pre>
                 </div>
               )}
-            </div>
+            </Card>
           );
         })}
-        {list.length === 0 && <p className="p-4 text-sm text-gray-400 text-center">No SMS activity yet.</p>}
-      </Card>
+      </div>
+      {list.length === 0 && <Card className="p-4"><p className="text-sm text-gray-400 text-center">No SMS activity yet.</p></Card>}
     </div>
   );
 }
@@ -1250,9 +1252,10 @@ function AdminTab({ state, setState, goMembers }: { state: AppState; setState: (
     <div className="space-y-3">
       <p className="text-xs text-gray-400">Occasional tasks — run at the end of each cycle or as needed.</p>
       {!g && <Card className="p-4 text-center"><p className="text-sm text-gray-400">No active group. Create one in Groups.</p></Card>}
-      <Card>
-        {adminItems.map((item, i) => (
-          <button key={item.key} onClick={() => !item.disabled && setSub(item.key)} disabled={item.disabled} className={`w-full flex items-center gap-3 p-4 text-left transition-colors ${i < adminItems.length - 1 ? "border-b border-gray-50" : ""} ${item.disabled ? "opacity-40 cursor-not-allowed" : "active:bg-gray-50"}`}>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {adminItems.map((item) => (
+          <Card key={item.key}>
+          <button onClick={() => !item.disabled && setSub(item.key)} disabled={item.disabled} className={`w-full flex items-center gap-3 p-4 text-left transition-colors ${item.disabled ? "opacity-40 cursor-not-allowed" : "active:bg-gray-50"}`}>
             <span className="text-xl w-8 text-center flex-shrink-0">{item.icon}</span>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
@@ -1263,8 +1266,9 @@ function AdminTab({ state, setState, goMembers }: { state: AppState; setState: (
             </div>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-gray-300 flex-shrink-0"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
+          </Card>
         ))}
-      </Card>
+      </div>
     </div>
   );
 }
@@ -1309,8 +1313,8 @@ export default function App() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-gray-50 max-w-md mx-auto">
-      <header className="bg-white border-b border-gray-100 px-4 h-14 flex items-center gap-3 flex-shrink-0">
+    <div className="relative h-full flex flex-col bg-gray-50 w-full max-w-md mx-auto md:max-w-2xl lg:max-w-none lg:mx-0">
+      <header className="bg-white border-b border-gray-100 px-4 h-14 flex items-center gap-3 flex-shrink-0 md:pl-48 lg:px-8 lg:pl-56">
         <div className="w-7 h-7 bg-emerald-600 rounded-lg flex items-center justify-center flex-shrink-0">
           <span className="text-white text-xs font-black">S</span>
         </div>
@@ -1318,11 +1322,25 @@ export default function App() {
         <p className="text-xs text-gray-400">{state.collectorName}</p>
       </header>
 
-      <main className="flex-1 overflow-y-auto px-4 py-4 pb-24">
+      <main className="flex-1 overflow-y-auto px-4 py-4 pb-24 md:pl-48 md:pb-4 lg:px-8 lg:pl-56 lg:py-6">
         {renderTab()}
       </main>
 
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white border-t border-gray-100">
+      <nav className="hidden md:flex md:flex-col md:fixed md:inset-y-0 md:z-20 md:w-48 lg:w-56 bg-white border-r border-gray-100 md:left-1/2 md:-translate-x-[21rem] lg:left-0 lg:translate-x-0">
+        <div className="flex flex-col py-4 gap-0.5">
+          {(["today", "collect", "members", "finance", "admin"] as NavTab[]).map((t) => {
+            const active = tab === t;
+            return (
+              <button key={t} onClick={() => setTab(t)} className={`flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${active ? "text-emerald-600 bg-emerald-50" : "text-gray-400 hover:bg-gray-50"}`}>
+                <NavIcon name={t} active={active} />
+                <span className={`text-xs font-semibold ${active ? "text-emerald-600" : "text-gray-400"}`}>{t === "collect" ? "Collect" : tabLabel[t]}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
+      <nav className="md:hidden fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white border-t border-gray-100">
         <div className="flex items-end h-16">
           {(["today", "collect", "members", "finance", "admin"] as NavTab[]).map((t) => {
             const active = tab === t;
