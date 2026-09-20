@@ -187,16 +187,15 @@ export default function Login({ onSuccess }: LoginProps) {
           
           {/* Brand Header */}
           <div className="flex flex-col items-center justify-center mb-6 text-center">
-            <SusuLogo className="w-20 h-20 mb-3 border border-emerald-500/20 p-1 bg-slate-950 shadow-lg" size="lg" />
+            <div className="bg-white p-2.5 rounded-3xl shadow-xl border border-emerald-500/20 mb-3 hover:scale-105 transition-transform">
+              <SusuLogo className="w-24 h-24" size="lg" />
+            </div>
             <div className="flex items-center gap-2">
-              <span className="text-2xl font-black bg-gradient-to-r from-emerald-400 via-emerald-300 to-teal-200 bg-clip-text text-transparent tracking-tight">
-                SusuBook
-              </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                 Exclusive Access
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-1 max-w-xs font-medium">
+            <p className="text-xs text-slate-400 mt-2 max-w-xs font-medium leading-relaxed">
               Liberia's trusted digital ledger for professional Susu collectors & savings groups
             </p>
           </div>
