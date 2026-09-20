@@ -5,6 +5,7 @@ import { db, enqueueSync } from "./lib/db";
 import { PWAInstallBanner } from "./components/PWAInstallBanner";
 import { SusuCardModal } from "./components/SusuCardModal";
 import UserProfileModal from "./components/UserProfileModal";
+import MasterAdminPortal from "./components/MasterAdminPortal";
 import {
   useGroups,
   useMembers,
@@ -2386,6 +2387,7 @@ export default function App({ collectorName = "Collector" }: AppProps) {
   const [collectSub, setCollectSub] = useState("Roster");
   const [financeSub, setFinanceSub] = useState("Arrears");
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showMasterAdminModal, setShowMasterAdminModal] = useState(false);
   
   // Computed state matching the original AppState shape
   const state: AppState = {
@@ -2658,6 +2660,17 @@ export default function App({ collectorName = "Collector" }: AppProps) {
           )}
         </div>
 
+        {collector?.is_super_admin === true && (
+          <button
+            onClick={() => setShowMasterAdminModal(true)}
+            className="flex items-center gap-1 bg-purple-600 hover:bg-purple-700 text-white font-medium px-2.5 py-1 rounded-full text-xs transition-all shadow-xs"
+            title="Master Admin Command Center — Provisioning Keys & Platform Audit"
+          >
+            <span>🔐</span>
+            <span className="hidden sm:inline font-semibold">Master Admin</span>
+          </button>
+        )}
+
         <button
           onClick={() => setShowProfileModal(true)}
           className="flex items-center space-x-2 bg-emerald-50/90 hover:bg-emerald-100 text-emerald-900 border border-emerald-200/80 font-semibold px-2.5 py-1 rounded-full text-xs transition-all shadow-xs"
@@ -2734,6 +2747,7 @@ export default function App({ collectorName = "Collector" }: AppProps) {
       </nav>
       <PWAInstallBanner />
       <UserProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} />
+      <MasterAdminPortal isOpen={showMasterAdminModal} onClose={() => setShowMasterAdminModal(false)} />
     </div>
   );
 }
