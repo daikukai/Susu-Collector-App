@@ -6,6 +6,7 @@ import { PWAInstallBanner } from "./components/PWAInstallBanner";
 import { SusuCardModal } from "./components/SusuCardModal";
 import UserProfileModal from "./components/UserProfileModal";
 import MasterAdminPortal from "./components/MasterAdminPortal";
+import SusuLogo from "./components/SusuLogo";
 import {
   useGroups,
   useMembers,
@@ -2635,7 +2636,7 @@ export default function App({ collectorName = "Collector" }: AppProps) {
   return (
     <div className="relative h-full flex flex-col bg-gray-50 w-full max-w-md mx-auto md:max-w-2xl lg:max-w-none lg:mx-0">
       <header className="bg-white border-b border-gray-100 px-4 h-14 flex items-center gap-3 flex-shrink-0 md:pl-48 lg:px-8 lg:pl-56">
-        <img src="/logo.png" alt="SusuBook Logo" className="w-7 h-7 object-contain rounded-lg flex-shrink-0" />
+        <SusuLogo className="w-7 h-7" size="sm" />
         <p className="text-sm font-semibold text-gray-800 flex-1">{tabLabel[tab]}</p>
         
         {/* Dexie Offline Sync Status Pill */}

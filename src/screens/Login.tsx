@@ -8,6 +8,7 @@ import {
   redeemInviteCode,
   InviteCode,
 } from "../lib/auth";
+import SusuLogo from "../components/SusuLogo";
 
 interface LoginProps {
   onSuccess: () => void;
@@ -186,11 +187,7 @@ export default function Login({ onSuccess }: LoginProps) {
           
           {/* Brand Header */}
           <div className="flex flex-col items-center justify-center mb-6 text-center">
-            <img
-              src="/logo.png"
-              alt="SusuBook Logo"
-              className="w-20 h-20 rounded-2xl shadow-lg object-contain mb-3 border border-emerald-500/20 p-1 bg-slate-950"
-            />
+            <SusuLogo className="w-20 h-20 mb-3 border border-emerald-500/20 p-1 bg-slate-950 shadow-lg" size="lg" />
             <div className="flex items-center gap-2">
               <span className="text-2xl font-black bg-gradient-to-r from-emerald-400 via-emerald-300 to-teal-200 bg-clip-text text-transparent tracking-tight">
                 SusuBook
