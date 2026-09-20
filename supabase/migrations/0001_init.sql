@@ -62,6 +62,8 @@ create table members (
   group_id        uuid not null references groups(id) on delete cascade,
   name            text not null,
   phone           text not null,
+  address         text not null default '',
+  member_code     text,
   payout_position integer not null,
   created_at      timestamptz not null default now()
 );

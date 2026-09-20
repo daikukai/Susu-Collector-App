@@ -34,6 +34,18 @@ export default defineConfig(({ mode }) => {
       port: parseInt(process.env.PORT || '8443'),
       strictPort: true,
       watch: { ignored: ['**/.figma/**'] },
+      proxy: {
+        '/api/africastalking-sandbox': {
+          target: 'https://api.sandbox.africastalking.com',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/africastalking-sandbox/, ''),
+        },
+        '/api/africastalking-live': {
+          target: 'https://api.africastalking.com',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/africastalking-live/, ''),
+        },
+      },
     },
     preview: {
       host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
