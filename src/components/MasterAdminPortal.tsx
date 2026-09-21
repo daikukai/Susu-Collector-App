@@ -122,18 +122,32 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
   const [successMessage, setSuccessMessage] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Reset Password Modal State
+  // Reset Password Modal & Show Password State
   const [resetModalCol, setResetModalCol] = useState<Collector | null>(null);
   const [newPasswordInput, setNewPasswordInput] = useState("");
   const [resettingPassword, setResettingPassword] = useState(false);
+  const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+
+  const toggleShowPassword = (colId: string) => {
+    setShowPasswords((prev) => ({ ...prev, [colId]: !prev[colId] }));
+  };
 
   const handleAdminResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resetModalCol || !resetModalCol.phone || !newPasswordInput) return;
     setResettingPassword(true);
     try {
-      await adminResetUserPassword(resetModalCol.phone, newPasswordInput);
+      await adminResetUserPassword(resetModalCol.phone, newPasswordInput, resetModalCol.id);
       setSuccessMessage(`Password / PIN for collector "${resetModalCol.name}" updated successfully to "${newPasswordInput}".`);
+      
+      // Update local state stats immediately
+      setStats((prev) => ({
+        ...prev,
+        collectorsList: prev.collectorsList.map((c) =>
+          c.id === resetModalCol.id ? { ...c, password: newPasswordInput } : c
+        ),
+      }));
+
       setResetModalCol(null);
       setNewPasswordInput("");
       setTimeout(() => setSuccessMessage(""), 5000);
@@ -144,8 +158,8 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
     }
   };
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (showSpinner = true) => {
+    if (showSpinner) setLoading(true);
     try {
       const [codesData, statsData] = await Promise.all([
         getInviteCodes(),
@@ -156,13 +170,18 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
     } catch (err) {
       console.error("Error fetching master admin data:", err);
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
   };
 
   useEffect(() => {
     if (isOpen) {
-      fetchData();
+      fetchData(true);
+      // Auto-refresh account database every 6 seconds while Command Center is open
+      const interval = setInterval(() => {
+        fetchData(false);
+      }, 6000);
+      return () => clearInterval(interval);
     }
   }, [isOpen]);
 
@@ -371,7 +390,7 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
                       />
                     </div>
                     <button
-                      onClick={fetchData}
+                      onClick={() => fetchData(true)}
                       className="p-1.5 text-slate-400 hover:text-white bg-slate-950 border border-slate-800 rounded-xl"
                       title="Refresh Accounts Data"
                     >
@@ -427,9 +446,22 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
                                 <p className="text-[10px] text-slate-500 font-sans">
                                   Auth: {col.phone ? phoneToAuthEmail(col.phone) : "—"}
                                 </p>
-                                <p className="text-[10px] text-slate-400 font-sans mt-0.5">
-                                  Password: <span className="text-amber-400 font-mono">Encrypted (Bcrypt)</span>
-                                </p>
+                                <div className="flex items-center gap-1.5 mt-1 font-mono text-xs">
+                                  <span className="text-[10px] text-slate-400 font-sans">Pass:</span>
+                                  <span className="text-amber-300 font-bold bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
+                                    {showPasswords[col.id]
+                                      ? col.password || (col.phone ? "susu" + col.phone.slice(-4) : "susu2026")
+                                      : "••••••••"}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleShowPassword(col.id)}
+                                    className="px-1.5 py-0.5 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-[10px] font-sans transition-colors"
+                                    title={showPasswords[col.id] ? "Hide Password" : "Show Password"}
+                                  >
+                                    {showPasswords[col.id] ? "🙈" : "👁️ Show"}
+                                  </button>
+                                </div>
                               </td>
                               <td className="p-3 text-center">
                                 <div className="inline-flex items-center gap-2 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-xl">
@@ -562,7 +594,7 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
                       />
                     </div>
                     <button
-                      onClick={fetchData}
+                      onClick={() => fetchData(true)}
                       className="p-1.5 text-slate-400 hover:text-white bg-slate-950 border border-slate-800 rounded-xl"
                       title="Refresh"
                     >
