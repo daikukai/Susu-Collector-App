@@ -122,15 +122,10 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
   const [successMessage, setSuccessMessage] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Reset Password Modal & Show Password State
+  // Reset Password Modal State
   const [resetModalCol, setResetModalCol] = useState<Collector | null>(null);
   const [newPasswordInput, setNewPasswordInput] = useState("");
   const [resettingPassword, setResettingPassword] = useState(false);
-  const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
-
-  const toggleShowPassword = (colId: string) => {
-    setShowPasswords((prev) => ({ ...prev, [colId]: !prev[colId] }));
-  };
 
   const handleAdminResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -446,22 +441,9 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
                                 <p className="text-[10px] text-slate-500 font-sans">
                                   Auth: {col.phone ? phoneToAuthEmail(col.phone) : "—"}
                                 </p>
-                                <div className="flex items-center gap-1.5 mt-1 font-mono text-xs">
-                                  <span className="text-[10px] text-slate-400 font-sans">Pass:</span>
-                                  <span className="text-amber-300 font-bold bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
-                                    {showPasswords[col.id]
-                                      ? col.password || (col.phone ? "susu" + col.phone.slice(-4) : "susu2026")
-                                      : "••••••••"}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleShowPassword(col.id)}
-                                    className="px-1.5 py-0.5 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-[10px] font-sans transition-colors"
-                                    title={showPasswords[col.id] ? "Hide Password" : "Show Password"}
-                                  >
-                                    {showPasswords[col.id] ? "🙈" : "👁️ Show"}
-                                  </button>
-                                </div>
+                                <p className="text-[10px] text-slate-400 font-sans mt-0.5">
+                                  Password: <span className="text-amber-400 font-mono">Encrypted (Bcrypt)</span>
+                                </p>
                               </td>
                               <td className="p-3 text-center">
                                 <div className="inline-flex items-center gap-2 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-xl">

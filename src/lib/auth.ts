@@ -743,28 +743,58 @@ export async function getSuperAdminStats(): Promise<{
 }> {
   try {
     const { data: collectors } = await supabase.from("collectors").select("*").order("created_at", { ascending: false });
+    const { data: inviteCodes } = await supabase.from("invite_codes").select("*");
     const { data: groups } = await supabase.from("groups").select("id, collector_id");
     const { data: members } = await supabase.from("members").select("id, group_id");
     const { data: txs } = await supabase.from("transactions").select("id, group_id");
 
     const rawList: Collector[] = collectors || [];
     const localCols = getLocalCollectors();
+    const localCodes = getLocalCustomInviteCodes();
 
-    const combinedDbAndLocal: Collector[] = [...rawList];
+    // Map to aggregate collectors by unique phone or id
+    const registeredPhoneMap = new Map<string, Collector>();
+
+    // 1. Add DB collectors from Supabase
+    rawList.forEach((c) => {
+      const key = c.phone || c.id;
+      registeredPhoneMap.set(key, c);
+    });
+
+    // 2. Add Local collectors from browser storage
     localCols.forEach((lc) => {
-      const existingIdx = combinedDbAndLocal.findIndex((c) => c.id === lc.id || (c.phone && c.phone === lc.phone));
-      if (existingIdx === -1) {
-        combinedDbAndLocal.unshift(lc);
+      const key = lc.phone || lc.id;
+      const existing = registeredPhoneMap.get(key);
+      if (existing) {
+        registeredPhoneMap.set(key, { ...lc, ...existing, phone: lc.phone || existing.phone });
       } else {
-        // Merge local details (like password, name) into DB item
-        combinedDbAndLocal[existingIdx] = {
-          ...lc,
-          ...combinedDbAndLocal[existingIdx],
-          password: lc.password || combinedDbAndLocal[existingIdx].password,
-          phone: lc.phone || combinedDbAndLocal[existingIdx].phone,
-        };
+        registeredPhoneMap.set(key, lc);
       }
     });
+
+    // 3. Extract all phone numbers from redeemed access keys in Supabase DB & Local Cache
+    const allInviteCodes = [...(inviteCodes || []), ...localCodes];
+    allInviteCodes.forEach((ic) => {
+      if (ic.used_by_phone) {
+        const phone = ic.used_by_phone;
+        const key = phone;
+        if (!registeredPhoneMap.has(key)) {
+          const generatedCol: Collector = {
+            id: `col-${phone.replace(/[^\d]/g, "")}`,
+            name: `Collector (${phone})`,
+            business_name: "Independent Susu Collector",
+            business_address: "Liberia",
+            phone: phone,
+            is_super_admin: phone === "+231886884019" || phone.includes("886884019"),
+            created_at: ic.used_at || ic.created_at || new Date().toISOString(),
+          };
+          registeredPhoneMap.set(key, generatedCol);
+          saveLocalCollector(generatedCol);
+        }
+      }
+    });
+
+    const combinedDbAndLocal = Array.from(registeredPhoneMap.values());
 
     // Map each collector to calculate their stats
     const enrichedList: Collector[] = combinedDbAndLocal.map((col) => {
@@ -787,7 +817,6 @@ export async function getSuperAdminStats(): Promise<{
         name: "Tony Merchant",
         business_name: "Waterside Market Association",
         phone: "+231880112233",
-        password: "susu-tony-pass",
         is_super_admin: false,
         created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
         groups_count: 3,
@@ -799,7 +828,6 @@ export async function getSuperAdminStats(): Promise<{
         name: "Fatima Kamara",
         business_name: "Red Light Commercial Susu",
         phone: "+231775443322",
-        password: "susu-fatima-pass",
         is_super_admin: false,
         created_at: new Date(Date.now() - 86400000 * 15).toISOString(),
         groups_count: 2,
@@ -811,7 +839,6 @@ export async function getSuperAdminStats(): Promise<{
         name: "Moses Johnson",
         business_name: "Sinkor Micro Savings",
         phone: "+231886998877",
-        password: "susu-moses-pass",
         is_super_admin: false,
         created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
         groups_count: 1,
