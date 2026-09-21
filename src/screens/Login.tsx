@@ -510,9 +510,22 @@ export default function Login({ onSuccess }: LoginProps) {
         </div>
 
         {/* Footer */}
-        <p className="text-center text-[11px] text-slate-500 mt-6 font-medium">
-          🔒 Powered by SusuBook • Secure Multi-Tenant Collector Network
-        </p>
+        <div className="flex flex-col items-center gap-2.5 mt-6">
+          <button
+            type="button"
+            onClick={() => {
+              localStorage.removeItem("pwa_install_dismissed");
+              window.dispatchEvent(new CustomEvent("pwa-prompt-ready"));
+            }}
+            className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1.5 bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-500/30 px-3.5 py-1.5 rounded-full transition-all active:scale-95"
+          >
+            <span>📱</span>
+            <span>Install SusuBook App</span>
+          </button>
+          <p className="text-center text-[11px] text-slate-500 font-medium">
+            🔒 Powered by SusuBook • Secure Multi-Tenant Collector Network
+          </p>
+        </div>
       </div>
 
       {/* 🔒 FORGOT PASSWORD / SMS OTP RESET MODAL */}
