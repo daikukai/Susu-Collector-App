@@ -7,6 +7,8 @@ import { PWAInstallBanner } from "./components/PWAInstallBanner";
 export default function AppRoot() {
   const { user, collector, loading, refreshCollector } = useAuth();
 
+  const isNewSignup = typeof window !== "undefined" && sessionStorage.getItem("susu_is_new_signup") === "true";
+
   return (
     <>
       <PWAInstallBanner />
@@ -21,10 +23,16 @@ export default function AppRoot() {
         </div>
       ) : !user ? (
         <Login onSuccess={refreshCollector} />
-      ) : (!collector || !collector.name || collector.name === "Collector" || collector.name.startsWith("collector231")) ? (
-        <Onboarding userId={user.id} onComplete={refreshCollector} />
+      ) : isNewSignup ? (
+        <Onboarding
+          userId={user.id}
+          onComplete={() => {
+            sessionStorage.removeItem("susu_is_new_signup");
+            refreshCollector();
+          }}
+        />
       ) : (
-        <App collectorName={collector.name} />
+        <App collectorName={collector?.name || "Collector"} />
       )}
     </>
   );

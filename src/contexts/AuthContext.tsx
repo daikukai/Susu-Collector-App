@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
-import { getSession, getCurrentUser, getCollector, signOut, onAuthStateChange } from "../lib/auth";
+import { getSession, getCurrentUser, getCollector, createCollector, signOut, onAuthStateChange } from "../lib/auth";
 import type { Collector } from "../lib/auth";
 
 interface AuthContextType {
@@ -20,19 +20,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [collector, setCollector] = useState<Collector | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadCollector = async (userId: string) => {
+  const loadCollector = async (userId: string, userPhone?: string) => {
     try {
-      const collectorData = await getCollector(userId);
+      let collectorData = await getCollector(userId);
+      if (!collectorData) {
+        const defaultName = userPhone ? `Collector (${userPhone})` : "Susu Collector";
+        collectorData = await createCollector(userId, { name: defaultName, phone: userPhone || "" });
+      }
       setCollector(collectorData);
     } catch (error) {
       console.error("Error loading collector:", error);
-      setCollector(null);
+      setCollector({ id: userId, name: "Collector", created_at: new Date().toISOString() });
     }
   };
 
   const refreshCollector = async () => {
     if (user) {
-      await loadCollector(user.id);
+      await loadCollector(user.id, user.phone || user.user_metadata?.phone);
     }
   };
 
@@ -45,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         if (currentSession?.user) {
           setUser(currentSession.user);
-          await loadCollector(currentSession.user.id);
+          await loadCollector(currentSession.user.id, currentSession.user.phone || currentSession.user.user_metadata?.phone);
         }
       } catch (error) {
         console.error("Error initializing auth:", error);
@@ -62,7 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(newSession?.user || null);
       
       if (newSession?.user) {
-        await loadCollector(newSession.user.id);
+        await loadCollector(newSession.user.id, newSession.user.phone || newSession.user.user_metadata?.phone);
       } else {
         setCollector(null);
       }

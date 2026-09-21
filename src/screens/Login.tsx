@@ -103,6 +103,7 @@ export default function Login({ onSuccess }: LoginProps) {
 
     try {
       if (mode === "sign_up") {
+        sessionStorage.setItem("susu_is_new_signup", "true");
         try {
           await signUpWithPhone(phone, password);
           // Burn / redeem invite code upon successful registration
@@ -112,6 +113,7 @@ export default function Login({ onSuccess }: LoginProps) {
         } catch (signUpErr: any) {
           if (signUpErr.message?.toLowerCase().includes("rate limit") || signUpErr.status === 429) {
             try {
+              sessionStorage.removeItem("susu_is_new_signup");
               await signInWithPhone(phone, password);
               onSuccess();
               return;
@@ -122,6 +124,7 @@ export default function Login({ onSuccess }: LoginProps) {
           throw signUpErr;
         }
       } else {
+        sessionStorage.removeItem("susu_is_new_signup");
         await signInWithPhone(phone, password);
       }
       onSuccess();
