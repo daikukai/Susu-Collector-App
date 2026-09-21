@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect } from "react";
 import { useAuth } from "./contexts/AuthContext";
 import { useDexieSync } from "./hooks/useDexieSync";
 import { db, enqueueSync } from "./lib/db";
-import { PWAInstallBanner } from "./components/PWAInstallBanner";
 import { SusuCardModal } from "./components/SusuCardModal";
 import UserProfileModal from "./components/UserProfileModal";
 import MasterAdminPortal from "./components/MasterAdminPortal";
@@ -1870,7 +1869,7 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
   const [gFreq, setGFreq] = useState("Daily");
   const [gStart, setGStart] = useState(todayStr());
   const [gEnd, setGEnd] = useState("");
-  const [feePercent, setFeePercent] = useState(0);
+  const [feePercent, setFeePercent] = useState<number | null>(10);
   const [gErrors, setGErrors] = useState<Record<string, string>>({});
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
@@ -1985,12 +1984,16 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
     } else if (gEnd <= gStart) {
       errs.endDate = "End date must be after the start date.";
     }
+    if (feePercent === null || feePercent === undefined || isNaN(feePercent)) {
+      errs.fee = "Select a collector's fee structure.";
+    }
     if (Object.keys(errs).length) { setGErrors(errs); return; }
+    const actualFee = feePercent ?? 0;
     const ng: Group = {
       id: uid("g"), name: gName.trim(), amount: amt, currency: gCur,
       frequency: gFreq, cycles: 1, cycleNumber: 1, payoutOrder: "Fixed rotation",
       startDate: gStart || todayStr(), endDate: gEnd || undefined,
-      feeType: feePercent > 0 ? "percentage" : "none", feeValue: feePercent,
+      feeType: actualFee > 0 ? "percentage" : "none", feeValue: actualFee,
     };
     setState({ ...state, groups: [...state.groups, ng], activeGroupId: ng.id });
     goMembers();
@@ -2152,8 +2155,8 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
             </div>
 
             <div className="mb-4">
-              <FieldWrap label="Collector's fee">
-                <Sel value={editFee > 0 ? "10" : "0"} onChange={(v) => setEditFee(Number(v))} disabled={isEditingGroupStarted}>
+              <FieldWrap label="Collector's fee" error={editErrors.fee} required>
+                <Sel value={editFee > 0 ? "10" : "0"} onChange={(v) => { setEditFee(Number(v)); setEditErrors({ ...editErrors, fee: "" }); }} disabled={isEditingGroupStarted} required>
                   <option value="10">1 Contribution per member (Standard fee)</option>
                   <option value="0">No fee (0)</option>
                 </Sel>
@@ -2242,13 +2245,21 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
           </div>
         </div>
         <div className="mb-3 space-y-1">
-          <FieldWrap label="Collector's fee">
-            <Sel value={feePercent > 0 ? "10" : "0"} onChange={(v) => setFeePercent(Number(v))}>
+          <FieldWrap label="Collector's fee" error={gErrors.fee} required>
+            <Sel
+              value={feePercent === null ? "" : String(feePercent)}
+              onChange={(v) => {
+                setFeePercent(v === "" ? null : Number(v));
+                setGErrors({ ...gErrors, fee: "" });
+              }}
+              required
+            >
+              {feePercent === null && <option value="" disabled>-- Select Collector Fee --</option>}
               <option value="10">1 Contribution per member (Standard fee)</option>
               <option value="0">No fee (0)</option>
             </Sel>
           </FieldWrap>
-          {feePercent > 0 && gAmt && (
+          {feePercent !== null && feePercent > 0 && gAmt && (
             <p className="text-xs text-emerald-600 mt-1.5 bg-emerald-50 rounded-lg px-2.5 py-1.5 border border-emerald-100">
               Collector earns 1 contribution unit ({gCur} {gAmt}) from each member for the cycle.
             </p>
@@ -2746,7 +2757,6 @@ export default function App({ collectorName = "Collector" }: AppProps) {
           })}
         </div>
       </nav>
-      <PWAInstallBanner />
       <UserProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} />
       <MasterAdminPortal isOpen={showMasterAdminModal} onClose={() => setShowMasterAdminModal(false)} />
     </div>

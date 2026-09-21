@@ -18,6 +18,16 @@
     <meta name="apple-mobile-web-app-title" content="SusuBook" />
     <meta name="application-name" content="SusuBook" />
     <meta name="description" content="SusuBook — Your susu properly recorded. Liberian Susu collection, roster management, offline financial ledger, and member SMS tracking." />
+    
+    <!-- Early PWA Install Prompt Capture Script -->
+    <script>
+      window.deferredPWAInstallPrompt = null;
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        window.deferredPWAInstallPrompt = e;
+        window.dispatchEvent(new CustomEvent('pwa-prompt-ready'));
+      });
+    </script>
   </head>
   <body class="bg-gray-50 text-gray-900 select-none antialiased">
     <div id="root"></div>
@@ -27,12 +37,11 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          // Only register ServiceWorker when in top-level window (not in preview iframe)
           if (window.self !== window.top) return;
           navigator.serviceWorker.register('/sw.js').then((reg) => {
             console.log('[PWA] ServiceWorker registered with scope:', reg.scope);
-          }).catch(() => {
-            // ServiceWorker requires top-level secure context or production domain
+          }).catch((err) => {
+            console.warn('[PWA] ServiceWorker registration notice:', err);
           });
         });
       }
