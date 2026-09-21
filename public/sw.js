@@ -1,22 +1,29 @@
-const CACHE_NAME = "susu-collector-v2";
+const CACHE_NAME = "susu-collector-v3";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
   "/manifest.json",
+  "/logo.png",
   "/robots.txt",
 ];
 
-// Install Event: Cache Core Static Shell
+// Install Event: Cache Core Static Shell gracefully
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
+    caches.open(CACHE_NAME).then(async (cache) => {
       console.log("[ServiceWorker] Pre-caching app shell");
-      return cache.addAll(STATIC_ASSETS);
+      for (const asset of STATIC_ASSETS) {
+        try {
+          await cache.add(asset);
+        } catch (err) {
+          console.warn("[ServiceWorker] Could not pre-cache asset:", asset);
+        }
+      }
     }).then(() => self.skipWaiting())
   );
 });
 
-// Activate Event: Clean Old Caches
+// Activate Event: Clean Old Caches & Take Control Immediately
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
@@ -32,7 +39,7 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Fetch Event: Stale-While-Revalidate for Assets, Network-First for API
+// Fetch Event: Network-First for API, Cache-First / Stale-While-Revalidate for Assets
 self.addEventListener("fetch", (event) => {
   const requestUrl = new URL(event.request.url);
 
