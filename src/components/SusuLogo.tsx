@@ -1,5 +1,4 @@
-import React from "react";
-import officialLogo from "../assets/susubook_official_logo.png";
+import { OFFICIAL_SUSUBOOK_LOGO } from "../assets/logoData";
 
 interface SusuLogoProps {
   className?: string;
@@ -9,7 +8,7 @@ interface SusuLogoProps {
 export default function SusuLogo({ className = "w-20 h-20" }: SusuLogoProps) {
   return (
     <img
-      src={officialLogo}
+      src={OFFICIAL_SUSUBOOK_LOGO}
       alt="SusuBook Official Logo"
       className={`${className} object-contain rounded-2xl flex-shrink-0`}
     />
