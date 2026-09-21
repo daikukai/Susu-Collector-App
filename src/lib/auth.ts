@@ -361,23 +361,63 @@ export function onAuthStateChange(callback: (session: Session | null) => void) {
  * 👑 SUPER ADMIN & PROVISIONING KEY ENGINE
  */
 
+function getLocalCustomInviteCodes(): InviteCode[] {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem("susu_custom_invite_codes") : null;
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalCustomInviteCode(codeObj: InviteCode) {
+  try {
+    if (typeof window === "undefined") return;
+    const existing = getLocalCustomInviteCodes();
+    const filtered = existing.filter((c) => c.code !== codeObj.code);
+    const updated = [codeObj, ...filtered];
+    localStorage.setItem("susu_custom_invite_codes", JSON.stringify(updated));
+  } catch (err) {
+    console.warn("Failed to save local invite code:", err);
+  }
+}
+
 // Fetch all invite codes for Super Admin
 export async function getInviteCodes(): Promise<InviteCode[]> {
-  const { data, error } = await supabase
-    .from("invite_codes")
-    .select("*")
-    .order("created_at", { ascending: false });
+  const localCodes = getLocalCustomInviteCodes();
+  const defaultDemos: InviteCode[] = [
+    { id: "demo-1", code: "DEMO-2026", kind: "multi_use_demo", status: "active", created_at: new Date().toISOString() },
+    { id: "demo-2", code: "SB-7890-MON", kind: "multi_use_demo", status: "active", created_at: new Date().toISOString() },
+    { id: "demo-3", code: "WATERSIDE-USD-2026", kind: "multi_use_demo", status: "active", created_at: new Date().toISOString() },
+    { id: "demo-4", code: "RED-LIGHT-2026", kind: "multi_use_demo", status: "active", created_at: new Date().toISOString() },
+  ];
 
-  if (error) {
-    console.warn("getInviteCodes notice:", error);
-    return [
-      { id: "1", code: "DEMO-2026", kind: "multi_use_demo", status: "active", created_at: new Date().toISOString() },
-      { id: "2", code: "SB-7890-MON", kind: "multi_use_demo", status: "active", created_at: new Date().toISOString() },
-      { id: "3", code: "WATERSIDE-USD-2026", kind: "multi_use_demo", status: "active", created_at: new Date().toISOString() },
-      { id: "4", code: "RED-LIGHT-2026", kind: "multi_use_demo", status: "active", created_at: new Date().toISOString() },
-    ];
+  try {
+    const { data, error } = await supabase
+      .from("invite_codes")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error || !data) {
+      const combined = [...localCodes];
+      defaultDemos.forEach((d) => {
+        if (!combined.some((c) => c.code === d.code)) combined.push(d);
+      });
+      return combined;
+    }
+
+    const combined = [...data];
+    localCodes.forEach((lc) => {
+      if (!combined.some((c) => c.code === lc.code)) combined.unshift(lc);
+    });
+    return combined;
+  } catch {
+    const combined = [...localCodes];
+    defaultDemos.forEach((d) => {
+      if (!combined.some((c) => c.code === d.code)) combined.push(d);
+    });
+    return combined;
   }
-  return data || [];
 }
 
 // Generate new invite code
@@ -390,27 +430,36 @@ export async function generateInviteCode(
     ? customCode.trim().toUpperCase()
     : `SB-${randomPart}-${new Date().getFullYear()}`;
 
-  const { data, error } = await supabase
-    .from("invite_codes")
-    .insert({
-      code,
-      kind,
-      status: "active",
-    })
-    .select()
-    .single();
+  const newObj: InviteCode = {
+    id: `ic-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    code,
+    kind,
+    status: "active",
+    created_at: new Date().toISOString(),
+  };
 
-  if (error) {
-    // Return graceful fallback if table hasn't been migrated yet
-    return {
-      id: `temp-${Date.now()}`,
-      code,
-      kind,
-      status: "active",
-      created_at: new Date().toISOString(),
-    };
+  saveLocalCustomInviteCode(newObj);
+
+  try {
+    const { data, error } = await supabase
+      .from("invite_codes")
+      .insert({
+        code,
+        kind,
+        status: "active",
+      })
+      .select()
+      .single();
+
+    if (!error && data) {
+      saveLocalCustomInviteCode(data);
+      return data;
+    }
+  } catch (err) {
+    console.warn("Supabase invite code insert warning:", err);
   }
-  return data;
+
+  return newObj;
 }
 
 // Validate invite code (for Phase 2 gate)
@@ -418,7 +467,7 @@ export async function validateInviteCode(rawCode: string): Promise<{ valid: bool
   const code = rawCode.trim().toUpperCase();
   if (!code) return { valid: false, message: "Please enter an invite code." };
 
-  // Check preset hardcoded demo codes for resilience
+  // 1. Check preset demo codes
   const demoCodes = ["DEMO-2026", "SB-7890-MON", "WATERSIDE-USD-2026", "RED-LIGHT-2026"];
   if (demoCodes.includes(code)) {
     return {
@@ -428,25 +477,45 @@ export async function validateInviteCode(rawCode: string): Promise<{ valid: bool
     };
   }
 
-  const { data, error } = await supabase
-    .from("invite_codes")
-    .select("*")
-    .eq("code", code)
-    .single();
-
-  if (error || !data) {
-    return { valid: false, message: `Invalid invite code "${code}". Check your SMS/WhatsApp or request access.` };
+  // 2. Check local custom generated codes
+  const localCodes = getLocalCustomInviteCodes();
+  const foundLocal = localCodes.find((c) => c.code === code);
+  if (foundLocal) {
+    if (foundLocal.status === "used" && foundLocal.kind === "single_use") {
+      return { valid: false, message: `Invite code "${code}" has already been redeemed.` };
+    }
+    if (foundLocal.status === "expired") {
+      return { valid: false, message: `Invite code "${code}" has expired.` };
+    }
+    return {
+      valid: true,
+      codeObj: foundLocal,
+      message: `Invite code "${code}" validated successfully!`,
+    };
   }
 
-  if (data.status === "used" && data.kind === "single_use") {
-    return { valid: false, message: `Invite code "${code}" has already been redeemed.` };
+  // 3. Query Supabase table
+  try {
+    const { data, error } = await supabase
+      .from("invite_codes")
+      .select("*")
+      .eq("code", code)
+      .single();
+
+    if (!error && data) {
+      if (data.status === "used" && data.kind === "single_use") {
+        return { valid: false, message: `Invite code "${code}" has already been redeemed.` };
+      }
+      if (data.status === "expired") {
+        return { valid: false, message: `Invite code "${code}" has expired.` };
+      }
+      return { valid: true, codeObj: data, message: `Invite code "${code}" validated successfully!` };
+    }
+  } catch (err) {
+    console.warn("Supabase invite code query notice:", err);
   }
 
-  if (data.status === "expired") {
-    return { valid: false, message: `Invite code "${code}" has expired.` };
-  }
-
-  return { valid: true, codeObj: data, message: `Invite code "${code}" validated successfully!` };
+  return { valid: false, message: `Invalid invite code "${code}". Check your SMS/WhatsApp or request access.` };
 }
 
 // Redeem invite code on successful registration
@@ -455,17 +524,30 @@ export async function redeemInviteCode(code: string, phone: string): Promise<boo
   const demoCodes = ["DEMO-2026", "SB-7890-MON", "WATERSIDE-USD-2026", "RED-LIGHT-2026"];
   if (demoCodes.includes(formattedCode)) return true;
 
-  const { error } = await supabase
-    .from("invite_codes")
-    .update({
-      status: "used",
-      used_by_phone: phone,
-      used_at: new Date().toISOString(),
-    })
-    .eq("code", formattedCode)
-    .eq("kind", "single_use");
+  const localCodes = getLocalCustomInviteCodes();
+  const foundLocal = localCodes.find((c) => c.code === formattedCode);
+  if (foundLocal && foundLocal.kind === "single_use") {
+    foundLocal.status = "used";
+    foundLocal.used_by_phone = phone;
+    foundLocal.used_at = new Date().toISOString();
+    saveLocalCustomInviteCode(foundLocal);
+  }
 
-  return !error;
+  try {
+    await supabase
+      .from("invite_codes")
+      .update({
+        status: "used",
+        used_by_phone: phone,
+        used_at: new Date().toISOString(),
+      })
+      .eq("code", formattedCode)
+      .eq("kind", "single_use");
+  } catch {
+    // Graceful fallback
+  }
+
+  return true;
 }
 
 // Delete collector account (Master Admin Control)
