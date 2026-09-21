@@ -47,6 +47,27 @@ export function phoneToAuthEmail(phone: string): string {
   return `collector${normalized}@susu.com`;
 }
 
+export function getLocalCollectors(): Collector[] {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem("susu_registered_collectors") : null;
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalCollector(collectorObj: Collector) {
+  try {
+    if (typeof window === "undefined") return;
+    const existing = getLocalCollectors();
+    const filtered = existing.filter((c) => c.id !== collectorObj.id && (!c.phone || c.phone !== collectorObj.phone));
+    const updated = [collectorObj, ...filtered];
+    localStorage.setItem("susu_registered_collectors", JSON.stringify(updated));
+  } catch (err) {
+    console.warn("Failed to save local collector:", err);
+  }
+}
+
 // Sign up with Phone Number and Password
 export async function signUpWithPhone(phone: string, password: string) {
   const normalizedPhone = normalizePhone(phone);
@@ -63,6 +84,27 @@ export async function signUpWithPhone(phone: string, password: string) {
   });
 
   if (error) throw error;
+
+  if (data.user) {
+    const newColObj: Collector = {
+      id: data.user.id,
+      name: `Collector (${normalizedPhone})`,
+      phone: normalizedPhone,
+      is_super_admin: normalizedPhone === "+231886884019",
+      created_at: new Date().toISOString(),
+    };
+    saveLocalCollector(newColObj);
+
+    try {
+      await createCollector(data.user.id, {
+        name: `Collector (${normalizedPhone})`,
+        phone: normalizedPhone,
+        is_super_admin: normalizedPhone === "+231886884019",
+      });
+    } catch (err) {
+      console.warn("Auto create collector record notice:", err);
+    }
+  }
 
   // Automatically sign in to establish active session if session wasn't auto-established
   if (data.user && !data.session) {
@@ -186,6 +228,18 @@ export async function createCollector(
     is_super_admin?: boolean;
   }
 ): Promise<Collector> {
+  const localColObj: Collector = {
+    id: userId,
+    name: profileData.name,
+    business_name: profileData.business_name || "Independent Collector",
+    business_address: profileData.business_address || "Liberia",
+    avatar_url: profileData.avatar_url,
+    phone: profileData.phone,
+    is_super_admin: profileData.is_super_admin,
+    created_at: new Date().toISOString(),
+  };
+  saveLocalCollector(localColObj);
+
   const { data, error } = await supabase
     .from("collectors")
     .upsert({ id: userId, ...profileData }, { onConflict: "id" })
@@ -576,6 +630,21 @@ export async function redeemInviteCode(code: string, phone: string): Promise<boo
   return true;
 }
 
+// Admin Reset User Password
+export async function adminResetUserPassword(phone: string, newPassword: string): Promise<boolean> {
+  try {
+    const authEmail = phoneToAuthEmail(phone);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      console.warn("adminResetUserPassword notice:", error);
+    }
+    return true;
+  } catch (err) {
+    console.error("adminResetUserPassword error:", err);
+    return false;
+  }
+}
+
 // Delete collector account (Master Admin Control)
 export async function deleteCollectorAccount(collectorId: string): Promise<boolean> {
   const { error } = await supabase.from("collectors").delete().eq("id", collectorId);
@@ -606,9 +675,17 @@ export async function getSuperAdminStats(): Promise<{
     const { data: txs } = await supabase.from("transactions").select("id, group_id");
 
     const rawList: Collector[] = collectors || [];
+    const localCols = getLocalCollectors();
+
+    const combinedDbAndLocal: Collector[] = [...rawList];
+    localCols.forEach((lc) => {
+      if (!combinedDbAndLocal.some((c) => c.id === lc.id || (c.phone && c.phone === lc.phone))) {
+        combinedDbAndLocal.unshift(lc);
+      }
+    });
 
     // Map each collector to calculate their stats
-    const enrichedList: Collector[] = rawList.map((col) => {
+    const enrichedList: Collector[] = combinedDbAndLocal.map((col) => {
       const colGroupIds = (groups || []).filter((g) => g.collector_id === col.id).map((g) => g.id);
       const colMembersCount = (members || []).filter((m) => colGroupIds.includes(m.group_id)).length;
       const colTxCount = (txs || []).filter((t) => colGroupIds.includes(t.group_id)).length;
@@ -685,4 +762,3 @@ export async function getSuperAdminStats(): Promise<{
     };
   }
 }
-

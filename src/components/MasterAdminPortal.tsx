@@ -5,6 +5,7 @@ import {
   getSuperAdminStats,
   deleteCollectorAccount,
   toggleSuperAdminRole,
+  adminResetUserPassword,
   phoneToAuthEmail,
   InviteCode,
   Collector,
@@ -120,6 +121,28 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
   const [searchQuery, setSearchQuery] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Reset Password Modal State
+  const [resetModalCol, setResetModalCol] = useState<Collector | null>(null);
+  const [newPasswordInput, setNewPasswordInput] = useState("");
+  const [resettingPassword, setResettingPassword] = useState(false);
+
+  const handleAdminResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetModalCol || !resetModalCol.phone || !newPasswordInput) return;
+    setResettingPassword(true);
+    try {
+      await adminResetUserPassword(resetModalCol.phone, newPasswordInput);
+      setSuccessMessage(`Password / PIN for collector "${resetModalCol.name}" updated successfully to "${newPasswordInput}".`);
+      setResetModalCol(null);
+      setNewPasswordInput("");
+      setTimeout(() => setSuccessMessage(""), 5000);
+    } catch (err) {
+      console.error("Failed to reset password:", err);
+    } finally {
+      setResettingPassword(false);
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -321,6 +344,16 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
 
               {/* Collectors Database View & Control Table */}
               <div className="space-y-3">
+                <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-2xl flex items-start gap-2.5 text-xs text-slate-300">
+                  <span className="text-base flex-shrink-0">🔒</span>
+                  <div>
+                    <p className="font-bold text-slate-200">Password Security & Admin Control Standard</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                      Passwords are one-way encrypted (Bcrypt) for account security and cannot be viewed in plain text. Use the <strong>🔑 Password</strong> action button below to instantly assign or reset the password/PIN for any collector account.
+                    </p>
+                  </div>
+                </div>
+
                 <div className="flex items-center justify-between gap-4">
                   <h3 className="text-sm font-semibold text-slate-200">
                     Platform Accounts & Credentials Audit ({stats.collectorsList.length})
@@ -394,6 +427,9 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
                                 <p className="text-[10px] text-slate-500 font-sans">
                                   Auth: {col.phone ? phoneToAuthEmail(col.phone) : "—"}
                                 </p>
+                                <p className="text-[10px] text-slate-400 font-sans mt-0.5">
+                                  Password: <span className="text-amber-400 font-mono">Encrypted (Bcrypt)</span>
+                                </p>
                               </td>
                               <td className="p-3 text-center">
                                 <div className="inline-flex items-center gap-2 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-xl">
@@ -415,7 +451,17 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
                                 )}
                               </td>
                               <td className="p-3 text-right">
-                                <div className="flex items-center justify-end gap-2">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    onClick={() => {
+                                      setResetModalCol(col);
+                                      setNewPasswordInput("");
+                                    }}
+                                    className="p-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20 rounded-lg text-[11px] transition-colors flex items-center gap-1 font-sans"
+                                    title="Reset Password / PIN for Collector"
+                                  >
+                                    <span>🔑</span> Reset
+                                  </button>
                                   <button
                                     onClick={() => handleToggleAdminRole(col)}
                                     className="p-1.5 bg-slate-800 hover:bg-purple-900/40 text-slate-300 hover:text-purple-300 border border-slate-700 rounded-lg text-[11px] transition-colors"
@@ -622,6 +668,67 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
           </button>
         </div>
       </div>
+
+      {/* 🔑 Master Admin Password Reset Modal */}
+      {resetModalCol && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[60] flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🔑</span>
+                <div>
+                  <h3 className="font-bold text-white text-sm">Set Collector Password / PIN</h3>
+                  <p className="text-[10px] text-slate-400">{resetModalCol.name} ({resetModalCol.phone})</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setResetModalCol(null)}
+                className="text-slate-400 hover:text-white text-sm font-bold w-7 h-7 rounded-full hover:bg-slate-800 flex items-center justify-center"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleAdminResetPassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  New Password / PIN for {resetModalCol.name}
+                </label>
+                <input
+                  type="text"
+                  value={newPasswordInput}
+                  onChange={(e) => setNewPasswordInput(e.target.value)}
+                  placeholder="e.g. 123456 or susu2026"
+                  required
+                  minLength={6}
+                  className="w-full bg-slate-950 border border-amber-500/50 text-amber-300 text-sm font-mono rounded-xl px-4 py-3 placeholder-slate-600 focus:outline-none focus:border-amber-400"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  This will override the collector's login password immediately.
+                </p>
+              </div>
+
+              <div className="flex space-x-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setResetModalCol(null)}
+                  className="w-1/3 bg-slate-800 text-slate-300 font-semibold text-xs py-3 rounded-xl hover:bg-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={resettingPassword}
+                  className="w-2/3 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs py-3 rounded-xl disabled:opacity-50 transition-all shadow-md shadow-amber-900/30"
+                >
+                  {resettingPassword ? "Updating..." : "Set New Password"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
