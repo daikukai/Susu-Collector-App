@@ -662,50 +662,11 @@ export function useCreateSmsEntry() {
         }
       }
 
-      const clientApiKey = import.meta.env.VITE_AT_API_KEY;
-      const clientUsername = import.meta.env.VITE_AT_USERNAME || "sandbox";
-
-      // 1. If client API key is provided, execute direct Africa's Talking API call
-      if (clientApiKey && recipientPhone) {
-        try {
-          const isSandbox = clientUsername.toLowerCase() === "sandbox";
-          const apiUrl = isSandbox
-            ? "/api/africastalking-sandbox/version1/messaging"
-            : "/api/africastalking-live/version1/messaging";
-
-          const formData = new URLSearchParams();
-          formData.append("username", clientUsername);
-          formData.append("to", recipientPhone);
-          formData.append("message", sms.content);
-
-          const atRes = await fetch(apiUrl, {
-            method: "POST",
-            headers: {
-              "apiKey": clientApiKey,
-              "Content-Type": "application/x-www-form-urlencoded",
-              "Accept": "application/json",
-            },
-            body: formData.toString(),
-          });
-
-          const atData = await atRes.json();
-          console.log("Africa's Talking API Response:", atData);
-
-          const recipients = atData?.SMSMessageData?.Recipients || [];
-          const firstRecipient = recipients[0];
-          if (firstRecipient && (firstRecipient.status === "Success" || firstRecipient.statusCode === 101)) {
-            realStatus = "Delivered";
-          } else if (firstRecipient && firstRecipient.status === "Failed") {
-            realStatus = "Failed";
-          }
-        } catch (atErr) {
-          console.error("Direct Africa's Talking API call error:", atErr);
-        }
-      } else {
-        // 2. Otherwise attempt sending via deployed Supabase Edge Function
+      // Route SMS delivery securely through deployed Supabase Edge Function
+      if (recipientPhone) {
         try {
           const { data: { session } } = await supabase.auth.getSession();
-          if (session && recipientPhone) {
+          if (session) {
             const { data: edgeRes, error: edgeErr } = await supabase.functions.invoke('send-sms', {
               body: {
                 to: recipientPhone,
@@ -723,7 +684,7 @@ export function useCreateSmsEntry() {
             }
           }
         } catch (err) {
-          console.warn("send-sms edge function note:", err);
+          console.warn("send-sms edge function notice:", err);
         }
       }
 

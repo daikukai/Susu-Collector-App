@@ -2,8 +2,13 @@ import React, { Component, ErrorInfo, ReactNode } from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "./contexts/AuthContext";
+import { supabase } from "./lib/supabase";
 import AppRoot from "./AppRoot";
 import "./index.css";
+
+if (typeof window !== "undefined") {
+  (window as any).supabase = supabase;
+}
 
 interface Props {
   children?: ReactNode;
@@ -57,7 +62,14 @@ class ErrorBoundary extends Component<Props, State> {
 
 const queryClient = new QueryClient();
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
+const container = document.getElementById("root")!;
+let root = (container as any)._reactRoot;
+if (!root) {
+  root = ReactDOM.createRoot(container);
+  (container as any)._reactRoot = root;
+}
+
+root.render(
   <React.StrictMode>
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>

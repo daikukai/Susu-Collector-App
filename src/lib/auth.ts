@@ -1,6 +1,8 @@
 import { supabase } from "./supabase";
 import type { Session, User } from "@supabase/supabase-js";
 
+export const SUPER_ADMIN_PHONE = "+231886884019";
+
 export interface Collector {
   id: string;
   name: string;
@@ -8,7 +10,6 @@ export interface Collector {
   business_address?: string;
   avatar_url?: string;
   phone?: string;
-  password?: string;
   is_super_admin?: boolean;
   created_at: string;
   groups_count?: number;
@@ -51,7 +52,10 @@ export function phoneToAuthEmail(phone: string): string {
 export function getLocalCollectors(): Collector[] {
   try {
     const raw = typeof window !== "undefined" ? localStorage.getItem("susu_registered_collectors") : null;
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const parsed: any[] = JSON.parse(raw);
+    // Sanitize any residual passwords from local storage objects
+    return parsed.map(({ password, ...rest }) => rest as Collector);
   } catch {
     return [];
   }
@@ -62,11 +66,11 @@ export function saveLocalCollector(collectorObj: Collector) {
     if (typeof window === "undefined") return;
     const existing = getLocalCollectors();
     const existingObj = existing.find((c) => c.id === collectorObj.id || (c.phone && c.phone === collectorObj.phone));
+    const { password, ...cleanObj } = collectorObj as any;
     const merged: Collector = {
       ...existingObj,
-      ...collectorObj,
-      password: collectorObj.password || existingObj?.password,
-      phone: collectorObj.phone || existingObj?.phone,
+      ...cleanObj,
+      phone: cleanObj.phone || existingObj?.phone,
     };
     const filtered = existing.filter((c) => c.id !== collectorObj.id && (!c.phone || c.phone !== collectorObj.phone));
     const updated = [merged, ...filtered];
@@ -80,6 +84,7 @@ export function saveLocalCollector(collectorObj: Collector) {
 export async function signUpWithPhone(phone: string, password: string) {
   const normalizedPhone = normalizePhone(phone);
   const authEmail = phoneToAuthEmail(phone);
+  const isSuperAdmin = normalizedPhone === SUPER_ADMIN_PHONE;
 
   const { data, error } = await supabase.auth.signUp({
     email: authEmail,
@@ -111,20 +116,18 @@ export async function signUpWithPhone(phone: string, password: string) {
   if (sessionUser) {
     const newColObj: Collector = {
       id: sessionUser.id,
-      name: `Collector (${normalizedPhone})`,
+      name: isSuperAdmin ? "Master Admin" : `Collector (${normalizedPhone})`,
       phone: normalizedPhone,
-      password: password,
-      is_super_admin: normalizedPhone === "+231886884019",
+      is_super_admin: isSuperAdmin,
       created_at: new Date().toISOString(),
     };
     saveLocalCollector(newColObj);
 
     try {
       await createCollector(sessionUser.id, {
-        name: `Collector (${normalizedPhone})`,
+        name: newColObj.name,
         phone: normalizedPhone,
-        password: password,
-        is_super_admin: normalizedPhone === "+231886884019",
+        is_super_admin: isSuperAdmin,
       });
     } catch (err) {
       console.warn("Auto create collector record notice:", err);
@@ -138,7 +141,7 @@ export async function signUpWithPhone(phone: string, password: string) {
 export async function signInWithPhone(phone: string, password: string) {
   const normalizedPhone = normalizePhone(phone);
   const authEmail = phoneToAuthEmail(phone);
-  const isAdminPhone = normalizedPhone === "+231886884019" || phone.includes("886884019");
+  const isAdminPhone = normalizedPhone === SUPER_ADMIN_PHONE;
 
   try {
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -150,18 +153,16 @@ export async function signInWithPhone(phone: string, password: string) {
     if (data.user) {
       const colObj: Collector = {
         id: data.user.id,
-        name: `Collector (${normalizedPhone})`,
+        name: isAdminPhone ? "Master Admin" : `Collector (${normalizedPhone})`,
         phone: normalizedPhone,
-        password: password,
         is_super_admin: isAdminPhone,
         created_at: new Date().toISOString(),
       };
       saveLocalCollector(colObj);
       try {
         await createCollector(data.user.id, {
-          name: `Collector (${normalizedPhone})`,
+          name: colObj.name,
           phone: normalizedPhone,
-          password: password,
           is_super_admin: isAdminPhone,
         });
       } catch {
@@ -179,7 +180,6 @@ export async function signInWithPhone(phone: string, password: string) {
             name: "Master Admin",
             business_name: "SusuBook Platform Command Center",
             phone: normalizedPhone,
-            password: password,
             is_super_admin: true,
           });
         }
@@ -188,8 +188,10 @@ export async function signInWithPhone(phone: string, password: string) {
           password,
         });
         return signInData;
-      } catch (autoCreateErr) {
-        console.warn("Super-Admin auto-registration notice:", autoCreateErr);
+      } catch (autoCreateErr: any) {
+        if (autoCreateErr?.message?.toLowerCase().includes("already registered") || autoCreateErr?.status === 422) {
+          throw new Error(`Invalid password for Master Admin (${SUPER_ADMIN_PHONE}). Please re-enter your registered password or request a reset code.`);
+        }
       }
     }
     throw err;
@@ -244,7 +246,7 @@ export async function getCollector(userId: string): Promise<Collector | null> {
   }
 
   // Ensure designated super admin phone always receives is_super_admin: true
-  if (data && (data.phone === "+231886884019" || data.phone?.includes("886884019"))) {
+  if (data && (data.phone === SUPER_ADMIN_PHONE)) {
     return { ...data, is_super_admin: true };
   }
 
@@ -260,13 +262,12 @@ export async function createCollector(
     business_address?: string;
     avatar_url?: string;
     phone?: string;
-    password?: string;
     is_super_admin?: boolean;
   }
 ): Promise<Collector> {
   const existingLocal = getLocalCollectors().find((c) => c.id === userId || (profileData.phone && c.phone === profileData.phone));
   const phoneToSave = profileData.phone || existingLocal?.phone;
-  const passwordToSave = profileData.password || existingLocal?.password;
+  const isSuperAdmin = profileData.is_super_admin ?? existingLocal?.is_super_admin ?? (phoneToSave === SUPER_ADMIN_PHONE);
 
   const localColObj: Collector = {
     id: userId,
@@ -275,8 +276,7 @@ export async function createCollector(
     business_address: profileData.business_address || existingLocal?.business_address || "Liberia",
     avatar_url: profileData.avatar_url || existingLocal?.avatar_url,
     phone: phoneToSave,
-    password: passwordToSave,
-    is_super_admin: profileData.is_super_admin ?? existingLocal?.is_super_admin ?? (phoneToSave === "+231886884019"),
+    is_super_admin: isSuperAdmin,
     created_at: existingLocal?.created_at || new Date().toISOString(),
   };
   saveLocalCollector(localColObj);
@@ -288,8 +288,7 @@ export async function createCollector(
     ...(profileData.business_address && { business_address: profileData.business_address }),
     ...(profileData.avatar_url && { avatar_url: profileData.avatar_url }),
     ...(phoneToSave && { phone: phoneToSave }),
-    ...(passwordToSave && { password: passwordToSave }),
-    ...(profileData.is_super_admin !== undefined && { is_super_admin: profileData.is_super_admin }),
+    ...(isSuperAdmin !== undefined && { is_super_admin: isSuperAdmin }),
   };
 
   const { data, error } = await supabase
@@ -300,16 +299,6 @@ export async function createCollector(
 
   if (error) {
     if (error.code === "PGRST204") {
-      // Fallback if 'password' or custom columns aren't added yet in Supabase SQL editor
-      delete upsertData.password;
-      const { data: fallbackData, error: fallbackErr } = await supabase
-        .from("collectors")
-        .upsert(upsertData, { onConflict: "id" })
-        .select()
-        .single();
-      if (!fallbackErr && fallbackData) return { ...localColObj, ...fallbackData };
-
-      // Secondary simple fallback
       const { name, phone } = profileData;
       const { data: f2Data, error: f2Err } = await supabase
         .from("collectors")
@@ -381,34 +370,16 @@ export async function requestPasswordResetOtp(phone: string): Promise<{ success:
 
   const smsMessage = `SusuBook Security Code: Your password reset code is ${otpCode}. Valid for 10 minutes. Do not share this code.`;
 
-  // Send via Africa's Talking / SMS API
+  // Dispatch via Supabase Edge Function to avoid client API key exposure
   try {
-    const clientApiKey = import.meta.env.VITE_AT_API_KEY;
-    const clientUsername = import.meta.env.VITE_AT_USERNAME || "sandbox";
-
-    if (clientApiKey) {
-      const isSandbox = clientUsername.toLowerCase() === "sandbox";
-      const apiUrl = isSandbox
-        ? "/api/africastalking-sandbox/version1/messaging"
-        : "/api/africastalking-live/version1/messaging";
-
-      const formData = new URLSearchParams();
-      formData.append("username", clientUsername);
-      formData.append("to", normalized);
-      formData.append("message", smsMessage);
-
-      await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-          apiKey: clientApiKey,
-          "Content-Type": "application/x-www-form-urlencoded",
-          Accept: "application/json",
-        },
-        body: formData.toString(),
-      });
-    }
+    await supabase.functions.invoke("send-sms", {
+      body: {
+        recipientPhone: normalized,
+        message: smsMessage,
+      },
+    });
   } catch (err) {
-    console.warn("SMS dispatch warning during password reset:", err);
+    console.warn("SMS dispatch notice during password reset:", err);
   }
 
   return {
@@ -697,19 +668,6 @@ export async function adminResetUserPassword(phone: string, newPassword: string,
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) {
       console.warn("adminResetUserPassword notice:", error);
-    }
-    
-    // Save password locally in local collector store
-    const localCols = getLocalCollectors();
-    const updatedCols = localCols.map((c) => (c.phone === phone || c.id === collectorId) ? { ...c, password: newPassword } : c);
-    localStorage.setItem("susu_registered_collectors", JSON.stringify(updatedCols));
-
-    if (collectorId) {
-      try {
-        await supabase.from("collectors").update({ password: newPassword }).eq("id", collectorId);
-      } catch (err) {
-        console.warn("Update password in collectors table notice:", err);
-      }
     }
     return true;
   } catch (err) {
