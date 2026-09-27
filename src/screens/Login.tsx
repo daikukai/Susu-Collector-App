@@ -49,9 +49,6 @@ export default function Login({ onSuccess }: LoginProps) {
   const [resetSuccess, setResetSuccess] = useState("");
   const [whatsappUrl, setWhatsappUrl] = useState("");
 
-  // Quick Preset Invite Codes for Demo/Testing
-  const PRESET_INVITE_CODES = ["SB-7890-MON", "RED-LIGHT-2026", "WATERSIDE-USD-2026", "DEMO-2026"];
-
   const handleUnlockAccess = async (codeOverride?: string) => {
     const codeToValidate = (codeOverride || inviteCodeInput).trim().toUpperCase();
     setInviteError("");
@@ -251,7 +248,7 @@ export default function Login({ onSuccess }: LoginProps) {
                     type="text"
                     value={inviteCodeInput}
                     onChange={(e) => setInviteCodeInput(e.target.value.toUpperCase())}
-                    placeholder="e.g. DEMO-TONY-2026"
+                    placeholder="e.g. SB-3942-2026"
                     className="w-full bg-slate-950 border border-slate-700/80 rounded-2xl px-4 py-3.5 text-center text-base font-mono tracking-wider text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 uppercase transition-all shadow-inner"
                   />
                 </div>
@@ -271,28 +268,6 @@ export default function Login({ onSuccess }: LoginProps) {
                     </>
                   )}
                 </button>
-
-                {/* Preset Demo Invitation Codes */}
-                <div className="pt-2">
-                  <p className="text-[11px] font-medium text-slate-500 mb-2 text-center">
-                    Try Preset Invitation Codes:
-                  </p>
-                  <div className="flex flex-wrap justify-center gap-1.5">
-                    {PRESET_INVITE_CODES.map((code) => (
-                      <button
-                        key={code}
-                        type="button"
-                        onClick={() => {
-                          setInviteCodeInput(code);
-                          handleUnlockAccess(code);
-                        }}
-                        className="px-2.5 py-1 bg-slate-950 hover:bg-emerald-950/50 border border-slate-800 hover:border-emerald-500/50 text-slate-400 hover:text-emerald-300 rounded-xl text-xs font-mono transition-all"
-                      >
-                        {code}
-                      </button>
-                    ))}
-                  </div>
-                </div>
               </div>
 
               {/* Already Registered Sign In Redirect */}

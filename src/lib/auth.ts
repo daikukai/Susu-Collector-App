@@ -473,12 +473,6 @@ function saveLocalCustomInviteCode(codeObj: InviteCode) {
 // Fetch all invite codes for Super Admin
 export async function getInviteCodes(): Promise<InviteCode[]> {
   const localCodes = getLocalCustomInviteCodes();
-  const defaultDemos: InviteCode[] = [
-    { id: "demo-1", code: "DEMO-2026", kind: "multi_use_demo", status: "active", created_at: new Date().toISOString() },
-    { id: "demo-2", code: "SB-7890-MON", kind: "multi_use_demo", status: "active", created_at: new Date().toISOString() },
-    { id: "demo-3", code: "WATERSIDE-USD-2026", kind: "multi_use_demo", status: "active", created_at: new Date().toISOString() },
-    { id: "demo-4", code: "RED-LIGHT-2026", kind: "multi_use_demo", status: "active", created_at: new Date().toISOString() },
-  ];
 
   try {
     const { data, error } = await supabase
@@ -487,11 +481,7 @@ export async function getInviteCodes(): Promise<InviteCode[]> {
       .order("created_at", { ascending: false });
 
     if (error || !data) {
-      const combined = [...localCodes];
-      defaultDemos.forEach((d) => {
-        if (!combined.some((c) => c.code === d.code)) combined.push(d);
-      });
-      return combined;
+      return localCodes;
     }
 
     const combined = [...data];
@@ -500,11 +490,7 @@ export async function getInviteCodes(): Promise<InviteCode[]> {
     });
     return combined;
   } catch {
-    const combined = [...localCodes];
-    defaultDemos.forEach((d) => {
-      if (!combined.some((c) => c.code === d.code)) combined.push(d);
-    });
-    return combined;
+    return localCodes;
   }
 }
 
@@ -550,22 +536,12 @@ export async function generateInviteCode(
   return newObj;
 }
 
-// Validate invite code (for Phase 2 gate)
+// Validate invite code (strictly via atomic server-side RPC)
 export async function validateInviteCode(rawCode: string): Promise<{ valid: boolean; codeObj?: InviteCode; message: string }> {
   const code = rawCode.trim().toUpperCase();
   if (!code) return { valid: false, message: "Please enter an invite code." };
 
-  // 1. Check preset demo codes
-  const demoCodes = ["DEMO-2026", "SB-7890-MON", "WATERSIDE-USD-2026", "RED-LIGHT-2026"];
-  if (demoCodes.includes(code)) {
-    return {
-      valid: true,
-      codeObj: { id: "demo", code, kind: "multi_use_demo", status: "active", created_at: new Date().toISOString() },
-      message: `Demo code '${code}' accepted!`,
-    };
-  }
-
-  // 2. Query atomic RPC server-side
+  // 1. Query atomic RPC server-side
   try {
     const { data: rpcRes, error: rpcErr } = await supabase.rpc("redeem_invite_code", {
       target_code: code,
@@ -591,7 +567,7 @@ export async function validateInviteCode(rawCode: string): Promise<{ valid: bool
     console.warn("RPC redeem_invite_code notice:", err);
   }
 
-  // 3. Check local custom generated codes (offline mode / local cache)
+  // 2. Check local custom generated codes (offline mode / local admin cache)
   const localCodes = getLocalCustomInviteCodes();
   const foundLocal = localCodes.find((c) => c.code === code);
   if (foundLocal) {
@@ -608,35 +584,12 @@ export async function validateInviteCode(rawCode: string): Promise<{ valid: bool
     };
   }
 
-  // 4. Query Supabase table directly as fallback
-  try {
-    const { data, error } = await supabase
-      .from("invite_codes")
-      .select("*")
-      .eq("code", code)
-      .maybeSingle();
-
-    if (!error && data) {
-      if (data.status === "used" && data.kind === "single_use") {
-        return { valid: false, message: `Invite code "${code}" has already been redeemed.` };
-      }
-      if (data.status === "expired") {
-        return { valid: false, message: `Invite code "${code}" has expired.` };
-      }
-      return { valid: true, codeObj: data, message: `Invite code "${code}" validated successfully!` };
-    }
-  } catch (err) {
-    console.warn("Supabase invite code query notice:", err);
-  }
-
-  return { valid: false, message: `Invalid invite code "${code}". Contact Master Admin (${SUPER_ADMIN_PHONE}) to request an authorized key.` };
+  return { valid: false, message: `Invalid invite code "${code}". Contact Admin (${ADMIN_WHATSAPP_PHONE}) to request an authorized key.` };
 }
 
 // Redeem invite code on successful registration
 export async function redeemInviteCode(code: string, phone: string): Promise<boolean> {
   const formattedCode = code.trim().toUpperCase();
-  const demoCodes = ["DEMO-2026", "SB-7890-MON", "WATERSIDE-USD-2026", "RED-LIGHT-2026"];
-  if (demoCodes.includes(formattedCode)) return true;
 
   try {
     const { data: rpcRes } = await supabase.rpc("redeem_invite_code", {
