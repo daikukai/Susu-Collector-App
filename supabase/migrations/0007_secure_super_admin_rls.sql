@@ -1,5 +1,5 @@
 -- 0007_secure_super_admin_rls.sql
--- Fix RLS policy infinite recursion (42P17) and enforce Super Admin column security
+-- Fix RLS policy infinite recursion (42P17) and enforce Super Admin column security on INSERT & UPDATE
 
 -- 1. Helper Security Definer Function (bypasses RLS to prevent 42P17 infinite recursion)
 create or replace function public.is_super_admin(user_id uuid)
@@ -14,28 +14,39 @@ as $$
   );
 $$;
 
--- 2. Trigger Function to block unauthorized modifications to is_super_admin column
+-- 2. Trigger Function to block unauthorized self-promotion on INSERT and UPDATE
 create or replace function public.protect_super_admin_column()
 returns trigger
 language plpgsql
 security definer
 as $$
 begin
-  if (NEW.is_super_admin is distinct from OLD.is_super_admin) then
-    if (auth.uid() is not null) then
-      if not public.is_super_admin(auth.uid()) then
+  -- Block non-admins from inserting rows with is_super_admin = true
+  if (TG_OP = 'INSERT') then
+    if (NEW.is_super_admin is true) then
+      if (auth.uid() is not null and not public.is_super_admin(auth.uid())) then
+        raise exception 'Unauthorized: New accounts cannot self-assign super admin privileges.';
+      end if;
+    end if;
+  end if;
+
+  -- Block non-admins from modifying is_super_admin on existing rows
+  if (TG_OP = 'UPDATE') then
+    if (NEW.is_super_admin is distinct from OLD.is_super_admin) then
+      if (auth.uid() is not null and not public.is_super_admin(auth.uid())) then
         raise exception 'Unauthorized: Only existing Super Admins can modify super admin privileges.';
       end if;
     end if;
   end if;
+
   return NEW;
 end;
 $$;
 
--- Attach trigger to collectors table
+-- Attach trigger to collectors table for both BEFORE INSERT and BEFORE UPDATE
 drop trigger if exists protect_super_admin_trigger on public.collectors;
 create trigger protect_super_admin_trigger
-  before update on public.collectors
+  before insert or update on public.collectors
   for each row
   execute function public.protect_super_admin_column();
 
@@ -53,9 +64,16 @@ create policy collectors_select on public.collectors
     or public.is_super_admin(auth.uid())
   );
 
+-- Enforce that INSERT requires is_super_admin to be false unless inserted by an existing super admin
 create policy collectors_insert on public.collectors
   for insert
-  with check (id = auth.uid());
+  with check (
+    id = auth.uid()
+    and (
+      coalesce(is_super_admin, false) = false
+      or public.is_super_admin(auth.uid())
+    )
+  );
 
 create policy collectors_update on public.collectors
   for update
