@@ -539,14 +539,14 @@ export default function Login({ onSuccess }: LoginProps) {
         </div>
       </div>
 
-      {/* 🔒 FORGOT PASSWORD / SMS OTP RESET MODAL */}
+      {/* 🔒 FORGOT PASSWORD / ADMIN SUPPORT MODAL */}
       {showResetModal && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl max-w-sm w-full p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-2">
-                <span className="text-lg">🔐</span>
-                <h3 className="font-bold text-white text-base">Reset Password</h3>
+                <span className="text-xl">💬</span>
+                <h3 className="font-bold text-white text-base">Account Password Support</h3>
               </div>
               <button
                 type="button"
@@ -557,167 +557,37 @@ export default function Login({ onSuccess }: LoginProps) {
               </button>
             </div>
 
-            {resetError && (
-              <div className="mb-3 p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl">
-                <p className="text-xs text-rose-400 font-medium">{resetError}</p>
-              </div>
-            )}
-
-            {resetSuccess && (
-              <div className="mb-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
-                <p className="text-xs text-emerald-400 font-medium">{resetSuccess}</p>
-              </div>
-            )}
-
-            {resetStep === "phone" ? (
-              <form onSubmit={handleSendResetOtp} className="space-y-4">
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Enter your registered phone number. We will format a private security code sent directly to your WhatsApp account.
+            <div className="space-y-5 text-center">
+              <div className="bg-emerald-950/60 border border-emerald-500/30 rounded-2xl p-4 space-y-2">
+                <span className="text-3xl block">🛡️</span>
+                <p className="text-xs text-emerald-300 font-semibold">
+                  Account Protection Enabled
                 </p>
+                <p className="text-xs text-slate-300 leading-relaxed font-medium">
+                  To protect collector ledgers and financial accounts, password resets are verified and processed directly by Admin Support.
+                </p>
+              </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Registered Phone Number
-                  </label>
-                  <input
-                    type="tel"
-                    value={resetPhone}
-                    onChange={(e) => setResetPhone(e.target.value)}
-                    placeholder="0886 884 019"
-                    required
-                    className="w-full bg-slate-950 border border-slate-800 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-600 focus:outline-none focus:border-emerald-500 font-mono"
-                  />
-                </div>
+              <div className="space-y-3">
+                <a
+                  href={`https://wa.me/231778445619?text=${encodeURIComponent("Hello Admin Support, I am requesting assistance resetting my SusuBook collector account password.")}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95"
+                >
+                  <span className="text-base">💬</span>
+                  <span>Contact Support on WhatsApp (+231778445619)</span>
+                </a>
 
-                <div className="flex space-x-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowResetModal(false)}
-                    className="w-1/3 bg-slate-800 text-slate-300 font-semibold text-xs py-3 rounded-xl hover:bg-slate-700"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={resetLoading}
-                    className="w-2/3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-3 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
-                  >
-                    <span>💬</span>
-                    <span>{resetLoading ? "Formatting..." : "Send via WhatsApp"}</span>
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <form onSubmit={handleVerifyOtpAndReset} className="space-y-4">
-                <div className="bg-emerald-950/60 border border-emerald-500/30 rounded-2xl p-3 text-center space-y-2">
-                  <p className="text-xs text-emerald-300 font-medium">
-                    A private code was sent to your WhatsApp number: <strong className="text-white font-mono">{resetPhone}</strong>
-                  </p>
-                  {whatsappUrl && (
-                    <a
-                      href={whatsappUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center gap-2 w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2 px-3 rounded-xl shadow-lg transition-all"
-                    >
-                      <span>💬</span>
-                      <span>Open WhatsApp Chat</span>
-                    </a>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    6-Digit Security Code
-                  </label>
-                  <input
-                    type="text"
-                    value={resetOtp}
-                    onChange={(e) => setResetOtp(e.target.value)}
-                    placeholder="e.g. 849201"
-                    required
-                    maxLength={6}
-                    className="w-full bg-slate-950 border border-emerald-500/50 text-emerald-400 text-center text-lg font-mono font-bold rounded-xl px-4 py-2.5 tracking-widest focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    New Password / PIN
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showResetPassword ? "text" : "password"}
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="••••••••"
-                      required
-                      minLength={6}
-                      className="w-full bg-slate-950 border border-slate-800 text-white text-sm rounded-xl pl-4 pr-12 py-3 placeholder-slate-600 focus:outline-none focus:border-emerald-500 font-mono"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowResetPassword(!showResetPassword)}
-                      className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-xs text-slate-500 hover:text-slate-300"
-                    >
-                      {showResetPassword ? "🙈 Hide" : "👁️ Show"}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Confirm New Password
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showResetPassword ? "text" : "password"}
-                      value={confirmNewPassword}
-                      onChange={(e) => setConfirmNewPassword(e.target.value)}
-                      placeholder="••••••••"
-                      required
-                      minLength={6}
-                      className="w-full bg-slate-950 border border-slate-800 text-white text-sm rounded-xl pl-4 pr-12 py-3 placeholder-slate-600 focus:outline-none focus:border-emerald-500 font-mono"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowResetPassword(!showResetPassword)}
-                      className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-xs text-slate-500 hover:text-slate-300"
-                    >
-                      {showResetPassword ? "🙈 Hide" : "👁️ Show"}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex space-x-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setResetStep("phone")}
-                    className="w-1/3 bg-slate-800 text-slate-300 font-semibold text-xs py-3 rounded-xl hover:bg-slate-700"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={resetLoading}
-                    className="w-2/3 bg-emerald-600 text-white font-bold text-xs py-3 rounded-xl hover:bg-emerald-500 disabled:opacity-50"
-                  >
-                    {resetLoading ? "Resetting..." : "Reset Password & Sign In"}
-                  </button>
-                </div>
-
-                <div className="pt-2 text-center border-t border-slate-800/80">
-                  <a
-                    href={`https://wa.me/231778445619?text=${encodeURIComponent(`Hello Admin, I am requesting assistance resetting my SusuBook account password for phone: ${resetPhone}`)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-block text-xs font-medium text-emerald-400 hover:underline"
-                  >
-                    💬 Contact Admin (+231778445619) on WhatsApp
-                  </a>
-                </div>
-              </form>
-            )}
+                <button
+                  type="button"
+                  onClick={() => setShowResetModal(false)}
+                  className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs py-3 rounded-xl transition-all"
+                >
+                  Back to Login
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

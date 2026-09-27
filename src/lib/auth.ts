@@ -422,23 +422,7 @@ export async function verifyOtpAndResetPassword(
   // Clear OTP code on success
   otpStore.delete(normalized);
 
-  // 1. Try server RPC reset_user_password (updates auth.users securely without requiring an active session)
-  try {
-    const { data: rpcRes, error: rpcErr } = await supabase.rpc("reset_user_password", {
-      target_phone: normalized,
-      new_plain_password: newPassword,
-    });
-
-    if (!rpcErr && rpcRes && rpcRes.success) {
-      // Auto sign in user with their new password immediately
-      await signInWithPhone(normalized, newPassword);
-      return { success: true };
-    }
-  } catch (rpcErr) {
-    console.warn("reset_user_password RPC notice:", rpcErr);
-  }
-
-  // 2. Active Session Fallback
+  // Update user password via active session
   const { error } = await supabase.auth.updateUser({
     password: newPassword,
   });
@@ -447,7 +431,7 @@ export async function verifyOtpAndResetPassword(
     try {
       await signInWithPhone(normalized, newPassword);
     } catch {
-      throw new Error(`Password reset verified! Please log in with your new password.`);
+      throw new Error(`Password reset request verified. If locked out, contact Admin (${ADMIN_WHATSAPP_PHONE}) for account recovery.`);
     }
   }
 
@@ -695,16 +679,6 @@ export async function redeemInviteCode(code: string, phone: string): Promise<boo
 // Admin Reset User Password
 export async function adminResetUserPassword(phone: string, newPassword: string, collectorId?: string): Promise<boolean> {
   const normalized = normalizePhone(phone);
-  try {
-    const { data: rpcRes } = await supabase.rpc("reset_user_password", {
-      target_phone: normalized,
-      new_plain_password: newPassword,
-    });
-    if (rpcRes?.success) return true;
-  } catch (err) {
-    console.warn("adminResetUserPassword RPC notice:", err);
-  }
-
   try {
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     return !error;
