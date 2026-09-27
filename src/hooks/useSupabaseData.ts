@@ -167,18 +167,26 @@ const memberToDb = (m: Member) => ({
   payout_position: m.payoutPosition,
 });
 
-const txToDb = (t: Omit<Tx, "id" | "timestamp"> | Tx) => ({
-  group_id: t.groupId,
-  member_id: t.memberId === "collector" ? null : t.memberId,
-  type: t.type,
-  amount: t.amount,
-  date: t.date,
-  method: t.method,
-  note: t.note,
-  supersedes: t.supersedes,
-  original_amount: t.originalAmount,
-  display_id: t.displayId,
-});
+const txToDb = (t: Omit<Tx, "id" | "timestamp"> | Tx) => {
+  const displayId = t.displayId || null;
+  const idempotencyKey = displayId
+    ? `tx-disp-${displayId}`
+    : `tx-${t.groupId}-${t.memberId}-${t.date}-${t.amount}-${t.type}-${(t as any).id || Date.now()}`;
+
+  return {
+    group_id: t.groupId,
+    member_id: t.memberId === "collector" ? null : t.memberId,
+    type: t.type,
+    amount: t.amount,
+    date: t.date,
+    method: t.method,
+    note: t.note,
+    supersedes: t.supersedes,
+    original_amount: t.originalAmount,
+    display_id: displayId,
+    idempotency_key: idempotencyKey,
+  };
+};
 
 const disputeToDb = (d: Omit<Dispute, "id"> | Dispute) => ({
   group_id: d.groupId,
@@ -662,8 +670,10 @@ export function useCreateSmsEntry() {
         }
       }
 
-      // Route SMS delivery securely through deployed Supabase Edge Function
-      if (recipientPhone) {
+      // Log SMS receipt directly into database (Zero-cost local/simulated delivery)
+      // Only invoke edge function if explicitly enabled via environment configuration
+      const enableExternalSms = Boolean(import.meta.env.VITE_ENABLE_EXTERNAL_SMS);
+      if (recipientPhone && enableExternalSms) {
         try {
           const { data: { session } } = await supabase.auth.getSession();
           if (session) {
@@ -949,6 +959,10 @@ export function useRecordPayment() {
         }
       }
 
+      const idempotencyKey = params.displayId
+        ? `tx-disp-${params.displayId}`
+        : `tx-pmt-${params.groupId}-${params.memberId}-${params.date}-${params.amount}`;
+
       const { data: transaction, error: txErr } = await supabase
         .from('transactions')
         .insert({
@@ -960,6 +974,7 @@ export function useRecordPayment() {
           method: params.method || "Cash",
           note: params.note || "Rapid roster",
           display_id: params.displayId,
+          idempotency_key: idempotencyKey,
           collector_id: collector.id,
         })
         .select()
@@ -1042,6 +1057,8 @@ export function useRecordCorrection() {
     }) => {
       if (!collector?.id) throw new Error("Not authenticated");
 
+      const idempotencyKey = `tx-corr-${params.groupId}-${params.memberId}-${params.supersedes}-${params.amount}`;
+
       const { data: transaction, error: txErr } = await supabase
         .from('transactions')
         .insert({
@@ -1054,6 +1071,7 @@ export function useRecordCorrection() {
           note: params.note || "Correction",
           supersedes: params.supersedes,
           original_amount: params.originalAmount,
+          idempotency_key: idempotencyKey,
           collector_id: collector.id,
         })
         .select()

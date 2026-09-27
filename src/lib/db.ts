@@ -62,3 +62,19 @@ export async function getPendingQueueCount(): Promise<number> {
 export async function clearSyncQueue(): Promise<void> {
   await db.syncQueue.clear();
 }
+
+export async function clearAllOfflineData(): Promise<void> {
+  try {
+    await Promise.all([
+      db.groups.clear(),
+      db.members.clear(),
+      db.transactions.clear(),
+      db.disputes.clear(),
+      db.rollovers.clear(),
+      db.smsLog.clear(),
+      db.syncQueue.clear(),
+    ]);
+  } catch (err) {
+    console.warn("Failed to clear offline IndexedDB cache:", err);
+  }
+}

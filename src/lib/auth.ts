@@ -1,7 +1,9 @@
 import { supabase } from "./supabase";
 import type { Session, User } from "@supabase/supabase-js";
+import { clearAllOfflineData } from "./db";
 
 export const SUPER_ADMIN_PHONE = "+231886884019";
+export const ADMIN_WHATSAPP_PHONE = "+231778445619";
 
 export interface Collector {
   id: string;
@@ -214,6 +216,18 @@ export async function signIn(email: string, password: string) {
 
 // Sign out
 export async function signOut() {
+  try {
+    await clearAllOfflineData();
+  } catch (err) {
+    console.warn("Notice: Error clearing offline storage during sign out:", err);
+  }
+  if (typeof window !== "undefined") {
+    try {
+      sessionStorage.clear();
+    } catch {
+      // Ignore
+    }
+  }
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
 }
@@ -357,34 +371,27 @@ export async function updateCollectorProfile(
 }
 
 /**
- * 🔒 PASSWORD RECOVERY: Send 1-time SMS OTP when a collector forgets their password
+ * 🔒 ZERO-COST PRIVATE WHATSAPP PASSWORD RECOVERY
+ * Generates 1-time verification OTP and formats a private WhatsApp deep-link
+ * targeted to the Admin WhatsApp number (+231778445619) ($0 SMS cost, 100% private).
  */
-export async function requestPasswordResetOtp(phone: string): Promise<{ success: boolean; message: string }> {
+export async function requestPasswordResetOtp(phone: string): Promise<{ success: boolean; whatsappUrl: string; message: string }> {
   const normalized = normalizePhone(phone);
+  const cleanAdminPhone = normalizePhone(ADMIN_WHATSAPP_PHONE).replace(/[^\d]/g, "");
   
-  // Generate secure 6-digit OTP
+  // Generate secure 6-digit verification OTP
   const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes validity
 
   otpStore.set(normalized, { otp: otpCode, expiresAt });
 
-  const smsMessage = `SusuBook Security Code: Your password reset code is ${otpCode}. Valid for 10 minutes. Do not share this code.`;
-
-  // Dispatch via Supabase Edge Function to avoid client API key exposure
-  try {
-    await supabase.functions.invoke("send-sms", {
-      body: {
-        recipientPhone: normalized,
-        message: smsMessage,
-      },
-    });
-  } catch (err) {
-    console.warn("SMS dispatch notice during password reset:", err);
-  }
+  const whatsappText = `🔐 SusuBook Password Reset Request:\n\nAccount Phone: ${normalized}\nReset PIN: *${otpCode}*\n\n(Send this to Admin WhatsApp to verify & reset your password.)`;
+  const whatsappUrl = `https://wa.me/${cleanAdminPhone}?text=${encodeURIComponent(whatsappText)}`;
 
   return {
     success: true,
-    message: `Security code sent via SMS to ${normalized}`,
+    whatsappUrl,
+    message: `Reset PIN generated! Click "Send via Admin WhatsApp" below to send your request to Admin (+231778445619).`,
   };
 }
 
@@ -415,20 +422,32 @@ export async function verifyOtpAndResetPassword(
   // Clear OTP code on success
   otpStore.delete(normalized);
 
-  // Re-authenticate / update user password via Supabase Auth
-  const authEmail = phoneToAuthEmail(phone);
-  
-  // Update password in Supabase
+  // 1. Try server RPC reset_user_password (updates auth.users securely without requiring an active session)
+  try {
+    const { data: rpcRes, error: rpcErr } = await supabase.rpc("reset_user_password", {
+      target_phone: normalized,
+      new_plain_password: newPassword,
+    });
+
+    if (!rpcErr && rpcRes && rpcRes.success) {
+      // Auto sign in user with their new password immediately
+      await signInWithPhone(normalized, newPassword);
+      return { success: true };
+    }
+  } catch (rpcErr) {
+    console.warn("reset_user_password RPC notice:", rpcErr);
+  }
+
+  // 2. Active Session Fallback
   const { error } = await supabase.auth.updateUser({
     password: newPassword,
   });
 
   if (error) {
-    // Fallback if session is not active: sign in or re-set
     try {
-      await signInWithPhone(phone, newPassword);
+      await signInWithPhone(normalized, newPassword);
     } catch {
-      throw new Error(`Password reset code verified! Please log in with your new password.`);
+      throw new Error(`Password reset verified! Please log in with your new password.`);
     }
   }
 
@@ -562,7 +581,33 @@ export async function validateInviteCode(rawCode: string): Promise<{ valid: bool
     };
   }
 
-  // 2. Check local custom generated codes
+  // 2. Query atomic RPC server-side
+  try {
+    const { data: rpcRes, error: rpcErr } = await supabase.rpc("redeem_invite_code", {
+      target_code: code,
+    });
+    if (!rpcErr && rpcRes) {
+      if (rpcRes.success) {
+        return {
+          valid: true,
+          codeObj: {
+            id: rpcRes.code_id || `code-${code}`,
+            code,
+            kind: rpcRes.kind || "single_use",
+            status: "active",
+            created_at: new Date().toISOString(),
+          },
+          message: rpcRes.message || `Access key "${code}" verified!`,
+        };
+      } else {
+        return { valid: false, message: rpcRes.message || "Invalid invitation access key." };
+      }
+    }
+  } catch (err) {
+    console.warn("RPC redeem_invite_code notice:", err);
+  }
+
+  // 3. Check local custom generated codes (offline mode / local cache)
   const localCodes = getLocalCustomInviteCodes();
   const foundLocal = localCodes.find((c) => c.code === code);
   if (foundLocal) {
@@ -579,7 +624,7 @@ export async function validateInviteCode(rawCode: string): Promise<{ valid: bool
     };
   }
 
-  // 3. Query Supabase table
+  // 4. Query Supabase table directly as fallback
   try {
     const { data, error } = await supabase
       .from("invite_codes")
@@ -600,33 +645,7 @@ export async function validateInviteCode(rawCode: string): Promise<{ valid: bool
     console.warn("Supabase invite code query notice:", err);
   }
 
-  // 4. Pattern & Standard Key Format Verification (ensures generated keys like SB-3329-2026 validate on any device)
-  const isStandardKeyPattern =
-    code.startsWith("SB-") ||
-    code.startsWith("SUSU-") ||
-    code.startsWith("DEMO-") ||
-    code.startsWith("VIP-") ||
-    code.startsWith("ADM-") ||
-    code.includes("-2026") ||
-    code.length >= 6;
-
-  if (isStandardKeyPattern) {
-    const fallbackObj: InviteCode = {
-      id: `gen-${code}`,
-      code,
-      kind: "single_use",
-      status: "active",
-      created_at: new Date().toISOString(),
-    };
-    saveLocalCustomInviteCode(fallbackObj);
-    return {
-      valid: true,
-      codeObj: fallbackObj,
-      message: `Access key "${code}" verified!`,
-    };
-  }
-
-  return { valid: false, message: `Invalid invite code "${code}". Check your SMS/WhatsApp or request access.` };
+  return { valid: false, message: `Invalid invite code "${code}". Contact Master Admin (${SUPER_ADMIN_PHONE}) to request an authorized key.` };
 }
 
 // Redeem invite code on successful registration
@@ -634,6 +653,18 @@ export async function redeemInviteCode(code: string, phone: string): Promise<boo
   const formattedCode = code.trim().toUpperCase();
   const demoCodes = ["DEMO-2026", "SB-7890-MON", "WATERSIDE-USD-2026", "RED-LIGHT-2026"];
   if (demoCodes.includes(formattedCode)) return true;
+
+  try {
+    const { data: rpcRes } = await supabase.rpc("redeem_invite_code", {
+      target_code: formattedCode,
+      user_phone: phone,
+    });
+    if (rpcRes?.success) {
+      return true;
+    }
+  } catch (err) {
+    console.warn("redeem_invite_code RPC error:", err);
+  }
 
   const localCodes = getLocalCustomInviteCodes();
   const foundLocal = localCodes.find((c) => c.code === formattedCode);
@@ -663,13 +694,20 @@ export async function redeemInviteCode(code: string, phone: string): Promise<boo
 
 // Admin Reset User Password
 export async function adminResetUserPassword(phone: string, newPassword: string, collectorId?: string): Promise<boolean> {
+  const normalized = normalizePhone(phone);
   try {
-    const authEmail = phoneToAuthEmail(phone);
+    const { data: rpcRes } = await supabase.rpc("reset_user_password", {
+      target_phone: normalized,
+      new_plain_password: newPassword,
+    });
+    if (rpcRes?.success) return true;
+  } catch (err) {
+    console.warn("adminResetUserPassword RPC notice:", err);
+  }
+
+  try {
     const { error } = await supabase.auth.updateUser({ password: newPassword });
-    if (error) {
-      console.warn("adminResetUserPassword notice:", error);
-    }
-    return true;
+    return !error;
   } catch (err) {
     console.error("adminResetUserPassword error:", err);
     return false;

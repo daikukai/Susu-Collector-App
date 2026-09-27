@@ -47,6 +47,7 @@ export default function Login({ onSuccess }: LoginProps) {
   const [resetLoading, setResetLoading] = useState(false);
   const [resetError, setResetError] = useState("");
   const [resetSuccess, setResetSuccess] = useState("");
+  const [whatsappUrl, setWhatsappUrl] = useState("");
 
   // Quick Preset Invite Codes for Demo/Testing
   const PRESET_INVITE_CODES = ["SB-7890-MON", "RED-LIGHT-2026", "WATERSIDE-USD-2026", "DEMO-2026"];
@@ -106,7 +107,6 @@ export default function Login({ onSuccess }: LoginProps) {
         sessionStorage.setItem("susu_is_new_signup", "true");
         try {
           await signUpWithPhone(phone, password);
-          // Burn / redeem invite code upon successful registration
           if (validatedCodeObj?.code) {
             await redeemInviteCode(validatedCodeObj.code, phone);
           }
@@ -145,9 +145,17 @@ export default function Login({ onSuccess }: LoginProps) {
     try {
       const res = await requestPasswordResetOtp(resetPhone);
       setResetSuccess(res.message);
+      if (res.whatsappUrl) {
+        setWhatsappUrl(res.whatsappUrl);
+        try {
+          window.open(res.whatsappUrl, "_blank");
+        } catch {
+          // Window popup fallback
+        }
+      }
       setResetStep("otp");
     } catch (err: any) {
-      setResetError(err.message || "Failed to send reset code. Verify phone number.");
+      setResetError(err.message || "Failed to generate reset code. Verify phone number.");
     } finally {
       setResetLoading(false);
     }
@@ -564,7 +572,7 @@ export default function Login({ onSuccess }: LoginProps) {
             {resetStep === "phone" ? (
               <form onSubmit={handleSendResetOtp} className="space-y-4">
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  Enter your registered phone number. We will send a 1-time security code via SMS to reset your password.
+                  Enter your registered phone number. We will format a private security code sent directly to your WhatsApp account.
                 </p>
 
                 <div>
@@ -592,21 +600,35 @@ export default function Login({ onSuccess }: LoginProps) {
                   <button
                     type="submit"
                     disabled={resetLoading}
-                    className="w-2/3 bg-emerald-600 text-white font-bold text-xs py-3 rounded-xl hover:bg-emerald-500 disabled:opacity-50"
+                    className="w-2/3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-3 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
                   >
-                    {resetLoading ? "Sending SMS..." : "Send Reset Code"}
+                    <span>💬</span>
+                    <span>{resetLoading ? "Formatting..." : "Send via WhatsApp"}</span>
                   </button>
                 </div>
               </form>
             ) : (
               <form onSubmit={handleVerifyOtpAndReset} className="space-y-4">
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Enter the security code sent to <strong className="text-slate-200">{resetPhone}</strong> and set your new password.
-                </p>
+                <div className="bg-emerald-950/60 border border-emerald-500/30 rounded-2xl p-3 text-center space-y-2">
+                  <p className="text-xs text-emerald-300 font-medium">
+                    A private code was sent to your WhatsApp number: <strong className="text-white font-mono">{resetPhone}</strong>
+                  </p>
+                  {whatsappUrl && (
+                    <a
+                      href={whatsappUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-2 w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2 px-3 rounded-xl shadow-lg transition-all"
+                    >
+                      <span>💬</span>
+                      <span>Open WhatsApp Chat</span>
+                    </a>
+                  )}
+                </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    6-Digit SMS Security Code
+                    6-Digit Security Code
                   </label>
                   <input
                     type="text"
@@ -667,7 +689,7 @@ export default function Login({ onSuccess }: LoginProps) {
                   </div>
                 </div>
 
-                <div className="flex space-x-2 pt-2">
+                <div className="flex space-x-2 pt-1">
                   <button
                     type="button"
                     onClick={() => setResetStep("phone")}
@@ -682,6 +704,17 @@ export default function Login({ onSuccess }: LoginProps) {
                   >
                     {resetLoading ? "Resetting..." : "Reset Password & Sign In"}
                   </button>
+                </div>
+
+                <div className="pt-2 text-center border-t border-slate-800/80">
+                  <a
+                    href={`https://wa.me/231778445619?text=${encodeURIComponent(`Hello Admin, I am requesting assistance resetting my SusuBook account password for phone: ${resetPhone}`)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block text-xs font-medium text-emerald-400 hover:underline"
+                  >
+                    💬 Contact Admin (+231778445619) on WhatsApp
+                  </a>
                 </div>
               </form>
             )}
