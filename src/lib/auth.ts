@@ -83,10 +83,21 @@ export function saveLocalCollector(collectorObj: Collector) {
 }
 
 // Sign up with Phone Number and Password
-export async function signUpWithPhone(phone: string, password: string) {
+export async function signUpWithPhone(phone: string, password: string, inviteCode?: string) {
   const normalizedPhone = normalizePhone(phone);
   const authEmail = phoneToAuthEmail(phone);
   const isSuperAdmin = normalizedPhone === SUPER_ADMIN_PHONE;
+
+  // Enforce invite redemption prior to Auth registration for non-admins
+  if (!isSuperAdmin) {
+    if (!inviteCode) {
+      throw new Error("An invitation access key is required to register a new collector account.");
+    }
+    const redeemed = await redeemInviteCode(inviteCode, normalizedPhone);
+    if (!redeemed) {
+      throw new Error("Invitation access key verification failed. Please check your key or contact Admin.");
+    }
+  }
 
   const { data, error } = await supabase.auth.signUp({
     email: authEmail,

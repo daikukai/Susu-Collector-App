@@ -103,10 +103,7 @@ export default function Login({ onSuccess }: LoginProps) {
       if (mode === "sign_up") {
         sessionStorage.setItem("susu_is_new_signup", "true");
         try {
-          await signUpWithPhone(phone, password);
-          if (validatedCodeObj?.code) {
-            await redeemInviteCode(validatedCodeObj.code, phone);
-          }
+          await signUpWithPhone(phone, password, validatedCodeObj?.code);
         } catch (signUpErr: any) {
           if (signUpErr.message?.toLowerCase().includes("rate limit") || signUpErr.status === 429) {
             try {
