@@ -279,13 +279,18 @@ function groupTotals(state: AppState, gid: string) {
     .filter((t) => t.groupId === gid && !sup[t.id] && getRootTxType(t, state.transactions) === "contribution")
     .reduce((a, t) => a + t.amount, 0);
 
-  // Outflows include payouts, collector fees & corrections whose root transaction is payout/collector_fee
+  // Keep member payouts and collector fees separate. Both are real outflows,
+  // but only recorded collector_fee transactions count as collected commission.
   const payouts = state.transactions
     .filter((t) => {
       if (t.groupId !== gid || sup[t.id]) return false;
       const rootType = getRootTxType(t, state.transactions);
-      return rootType === "payout" || rootType === "collector_fee";
+      return rootType === "payout";
     })
+    .reduce((a, t) => a + t.amount, 0);
+
+  const collectorFees = state.transactions
+    .filter((t) => t.groupId === gid && !sup[t.id] && getRootTxType(t, state.transactions) === "collector_fee")
     .reduce((a, t) => a + t.amount, 0);
 
   let expected = 0, memberPaid = 0, pastArrears = 0;
@@ -301,19 +306,21 @@ function groupTotals(state: AppState, gid: string) {
     return state.transactions.some((t) => t.memberId === m.id && !sup[t.id] && getRootTxType(t, state.transactions) === "contribution");
   }).length;
 
-  const commission = g.feeType === "percentage" && g.feeValue > 0
-    ? contributingMembers * g.amount
-    : ((g.feeType as string) === "fixed" ? (g.feeValue || 0) : 0);
+  const plannedCommission = g.feeType === "percentage" && g.feeValue > 0
+    ? contributions * (g.feeValue / 100)
+    : ((g.feeType as string) === "1_unit" ? contributingMembers * g.amount
+      : ((g.feeType as string) === "fixed" ? (g.feeValue || 0) : 0));
   
   // COLLECTION POT BALANCE = TOTAL CONTRIBUTIONS IN - TOTAL OUTFLOWS DISBURSED (PAYOUTS & FEES)
-  const balance = Math.max(0, contributions - payouts);
+  const balance = Math.max(0, contributions - payouts - collectorFees);
 
   // full-cycle expected if endDate known
   const cp = totalCyclePeriods(g);
   const fullCycleExpected = cp !== null ? members.length * g.amount * cp : expected;
-  return { expected, fullCycleExpected, contributions, payouts, outstanding, pastArrears, commission, balance, paid: memberPaid, hasEndDate: !!g.endDate };
+  return { expected, fullCycleExpected, contributions, payouts, collectorFees, plannedCommission, outstanding, pastArrears, balance, paid: memberPaid, hasEndDate: !!g.endDate };
 }
-// Per-member payout = their contributions minus 1 contribution unit collector fee
+// Per-member payout is based on the group's configured fee. Actual cash movement
+// is still represented only by recorded payout and collector_fee transactions.
 function memberPayout(state: AppState, m: Member): number {
   const g = state.groups.find((gr) => gr.id === m.groupId)!;
   const sup = supersededMap(state.transactions);
@@ -321,7 +328,9 @@ function memberPayout(state: AppState, m: Member): number {
     .filter((t) => t.memberId === m.id && !sup[t.id] && getRootTxType(t, state.transactions) === "contribution")
     .reduce((a, t) => a + t.amount, 0);
   if (paid <= 0) return 0;
-  const fee = g.feeType === "percentage" && g.feeValue > 0 ? Math.min(paid, g.amount) : 0;
+  const fee = g.feeType === "percentage" && g.feeValue > 0
+    ? paid * (g.feeValue / 100)
+    : ((g.feeType as string) === "1_unit" ? Math.min(paid, g.amount) : 0);
   return Math.max(0, paid - fee);
 }
 function payoutDate(g: Group): string | null {
@@ -589,9 +598,9 @@ function TodayTab({ state, setState, goCollect, goFinance }: {
           <Card className="p-4 flex items-center justify-between border border-emerald-100">
             <div>
               <p className="text-xs text-gray-400">Your collector's earnings</p>
-              <p className="text-xs text-gray-500 mt-0.5">1 contribution ({fmt(g.amount, g.currency)}) per member</p>
+              <p className="text-xs text-gray-500 mt-0.5">{g.feeValue}% of recorded contributions</p>
             </div>
-            <p className="text-xl font-bold text-emerald-600">{fmt(t.commission, g.currency)}</p>
+            <p className="text-xl font-bold text-emerald-600">{fmt(t.plannedCommission, g.currency)}</p>
           </Card>
         )}
 
@@ -1351,12 +1360,14 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
 
   const recordCollectorFee = () => {
     const ts = nowISO();
+    const feeDue = Math.max(0, t.plannedCommission - t.collectorFees);
+    if (feeDue <= 0) return;
     const fakeM: Member = { id: "collector", groupId: g.id, name: state.collectorName, phone: "", payoutPosition: 0 };
-    const content = buildSmsContent("Collector fee", fakeM, t.commission, g);
+    const content = buildSmsContent("Collector fee", fakeM, feeDue, g);
     const sms = mkSms("collector", "Collector fee", content);
-    const newTx: Tx = { id: uid("t"), groupId: g.id, memberId: "collector", type: "collector_fee", amount: t.commission, date: ts.slice(0, 10), timestamp: ts, method: poMethod, note: "Collector fee payout" };
+    const newTx: Tx = { id: uid("t"), groupId: g.id, memberId: "collector", type: "collector_fee", amount: feeDue, date: ts.slice(0, 10), timestamp: ts, method: poMethod, note: "Collector fee payout", displayId: mkTxId() };
     setState({ ...state, transactions: [...state.transactions, newTx], smsLog: [sms, ...state.smsLog] });
-    setPoConfirm(`Collector fee of ${fmt(t.commission, g.currency)} recorded · SMS receipt generated`);
+    setPoConfirm(`Collector fee of ${fmt(feeDue, g.currency)} recorded · SMS receipt generated`);
   };
 
   // ── Ledger ──
@@ -1476,13 +1487,13 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
           </div>
 
           {/* Collector's own fee payout */}
-          {g.feeType === "percentage" && g.feeValue > 0 && (
+          {g.feeType !== "none" && t.plannedCommission > t.collectorFees && (
             <Card className="p-4 border border-emerald-100">
               <p className="text-sm font-semibold text-gray-800 mb-0.5">Collector's fee — {state.collectorName}</p>
-              <p className="text-xs text-gray-400 mb-3">1 contribution ({fmt(g.amount, g.currency)}) per member · {fmt(t.commission, g.currency)} earned</p>
+              <p className="text-xs text-gray-400 mb-3">Configured fee: {fmt(t.plannedCommission, g.currency)} · already collected: {fmt(t.collectorFees, g.currency)}</p>
               {hasCollectorPayout
                 ? <Badge color="green"><CheckIcon className="w-3 h-3" /> Fee collected</Badge>
-                : <PrimaryBtn onClick={recordCollectorFee}>Collect my fee — {fmt(t.commission, g.currency)}</PrimaryBtn>
+                : <PrimaryBtn onClick={recordCollectorFee}>Collect fee — {fmt(t.plannedCommission - t.collectorFees, g.currency)}</PrimaryBtn>
               }
             </Card>
           )}
@@ -1605,7 +1616,7 @@ function ReconcileSub({ state, g, t, onBack }: { state: AppState; g: Group; t: R
   const rows = [
     { label: "Total contributions collected (credits)", val: fmt(t.contributions, g.currency), type: "credit" },
     { label: "Total payouts issued (debits)", val: fmt(t.payouts, g.currency), type: "debit" },
-    ...(t.commission > 0 ? [{ label: "Collector's commission fee", val: fmt(t.commission, g.currency), type: "fee" }] : []),
+    ...(t.collectorFees > 0 ? [{ label: "Collector fees recorded (debits)", val: fmt(t.collectorFees, g.currency), type: "fee" }] : []),
     { label: "Current collection pot balance", val: fmt(t.balance, g.currency), bold: true },
     { label: "Full cycle expected contributions", val: fmt(t.fullCycleExpected, g.currency) },
     { label: "Member outstanding arrears", val: fmt(t.outstanding, g.currency), alert: t.outstanding > 0 },
