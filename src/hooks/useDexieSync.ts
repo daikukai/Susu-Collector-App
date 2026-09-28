@@ -70,17 +70,15 @@ export function useDexieSync() {
           const t: Tx = item.payload;
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.user) {
-            const { error } = await supabase.from("transactions").insert({
-              group_id: t.groupId,
-              member_id: t.memberId === "collector" ? null : t.memberId,
-              type: t.type,
-              amount: t.amount,
-              date: t.date,
-              method: t.method,
-              note: t.note,
-              display_id: t.displayId,
-              collector_id: session.user.id,
-              timestamp: t.timestamp || new Date().toISOString(),
+            const { error } = await supabase.rpc("record_payment_transaction", {
+              p_group_id: t.groupId,
+              p_member_id: t.memberId === "collector" ? null : t.memberId,
+              p_amount: t.amount,
+              p_date: t.date,
+              p_method: t.method || "Cash",
+              p_note: t.note || "Rapid roster",
+              p_display_id: t.displayId,
+              p_collector_id: session.user.id,
             });
             if (!error) success = true;
           } else {

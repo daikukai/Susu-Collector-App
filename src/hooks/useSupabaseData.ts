@@ -605,18 +605,79 @@ export function useCreateTransaction() {
     mutationFn: async (tx: Omit<Tx, "id" | "timestamp">) => {
       if (!collector?.id) throw new Error("Not authenticated");
       
-      const { data, error } = await supabase
-        .from("transactions")
-        .insert({
-          ...txToDb(tx),
-          collector_id: collector.id,
-          timestamp: new Date().toISOString(),
-        })
-        .select()
-        .single();
-      
-      if (error) throw error;
-      return dbToTx(data);
+      const isCorrection = tx.type === "correction" && tx.supersedes;
+
+      if (isCorrection) {
+        try {
+          const { data: efData, error: efErr } = await supabase.functions.invoke("record-correction", {
+            body: {
+              groupId: tx.groupId,
+              memberId: tx.memberId === "collector" ? null : tx.memberId,
+              amount: tx.amount,
+              date: tx.date,
+              method: tx.method || "Cash",
+              note: tx.note || "Correction",
+              supersedes: tx.supersedes,
+              originalAmount: tx.originalAmount || tx.amount,
+            },
+          });
+          if (!efErr && efData?.transaction) {
+            return dbToTx(efData.transaction);
+          }
+        } catch {
+          // Fallback to server RPC
+        }
+
+        const { data: rpcRes, error: rpcErr } = await supabase.rpc("record_correction_transaction", {
+          p_group_id: tx.groupId,
+          p_member_id: tx.memberId === "collector" ? null : tx.memberId,
+          p_amount: tx.amount,
+          p_date: tx.date,
+          p_method: tx.method || "Cash",
+          p_note: tx.note || "Correction",
+          p_supersedes: tx.supersedes,
+          p_original_amount: tx.originalAmount || tx.amount,
+          p_collector_id: collector.id,
+        });
+
+        if (rpcErr) throw rpcErr;
+        const txObj = rpcRes?.transaction || rpcRes;
+        return dbToTx(txObj);
+      } else {
+        try {
+          const { data: efData, error: efErr } = await supabase.functions.invoke("record-payment", {
+            body: {
+              groupId: tx.groupId,
+              memberId: tx.memberId === "collector" ? null : tx.memberId,
+              amount: tx.amount,
+              date: tx.date,
+              method: tx.method || "Cash",
+              note: tx.note || "Rapid roster",
+              displayId: tx.displayId || `TX-${Date.now()}`,
+            },
+          });
+          if (!efErr && efData?.transaction) {
+            return dbToTx(efData.transaction);
+          }
+        } catch {
+          // Fallback to server RPC
+        }
+
+        const { data: rpcRes, error: rpcErr } = await supabase.rpc("record_payment_transaction", {
+          p_group_id: tx.groupId,
+          p_member_id: tx.memberId === "collector" ? null : tx.memberId,
+          p_amount: tx.amount,
+          p_date: tx.date,
+          p_method: tx.method || "Cash",
+          p_note: tx.note || "Rapid roster",
+          p_display_id: tx.displayId || `TX-${Date.now()}`,
+          p_collector_id: collector.id,
+        });
+
+        if (rpcErr) throw rpcErr;
+        const txObj = rpcRes?.transaction || rpcRes;
+        return dbToTx(txObj);
+      }
     },
     onMutate: async (newTx) => {
       await queryClient.cancelQueries({ queryKey: ["transactions", collector?.id] });
@@ -892,7 +953,7 @@ export function useDeleteMember() {
     mutationFn: async (id: string) => {
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
       if (isUuid) {
-        await supabase.from("transactions").delete().eq("member_id", id);
+        // Financial records are immutable and retained for audit compliance
         await supabase.from("disputes").delete().eq("member_id", id);
         await supabase.from("rollovers").delete().eq("member_id", id);
         await supabase.from("sms_log").delete().eq("member_id", id);
@@ -945,53 +1006,42 @@ export function useRecordPayment() {
     }) => {
       if (!collector?.id) throw new Error("Not authenticated");
 
-      // Check for idempotency
-      if (params.displayId) {
-        const { data: existingTx } = await supabase
-          .from('transactions')
-          .select('*')
-          .eq('display_id', params.displayId)
-          .eq('group_id', params.groupId)
-          .maybeSingle();
+      // 1. Attempt Edge Function invoke first
+      try {
+        const { data: efData, error: efErr } = await supabase.functions.invoke("record-payment", {
+          body: {
+            groupId: params.groupId,
+            memberId: params.memberId,
+            amount: params.amount,
+            date: params.date,
+            method: params.method || "Cash",
+            note: params.note || "Rapid roster",
+            displayId: params.displayId,
+          },
+        });
 
-        if (existingTx) {
-          return { transaction: existingTx, idempotent: true };
+        if (!efErr && efData?.transaction) {
+          return { transaction: efData.transaction, idempotent: efData.idempotent };
         }
+      } catch (err) {
+        console.warn("Edge Function record-payment notice, falling back to server RPC:", err);
       }
 
-      const idempotencyKey = params.displayId
-        ? `tx-disp-${params.displayId}`
-        : `tx-pmt-${params.groupId}-${params.memberId}-${params.date}-${params.amount}`;
-
-      const { data: transaction, error: txErr } = await supabase
-        .from('transactions')
-        .insert({
-          group_id: params.groupId,
-          member_id: params.memberId === "collector" ? null : params.memberId,
-          type: "contribution",
-          amount: params.amount,
-          date: params.date,
-          method: params.method || "Cash",
-          note: params.note || "Rapid roster",
-          display_id: params.displayId,
-          idempotency_key: idempotencyKey,
-          collector_id: collector.id,
-        })
-        .select()
-        .single();
-
-      if (txErr) throw txErr;
-
-      // Insert matching SMS log
-      await supabase.from('sms_log').insert({
-        member_id: params.memberId === "collector" ? null : params.memberId,
-        kind: "Receipt",
-        status: "Delivered",
-        content: `Payment receipt for ${params.amount}`,
-        collector_id: collector.id,
+      // 2. Fallback to atomic SECURITY DEFINER RPC
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc("record_payment_transaction", {
+        p_group_id: params.groupId,
+        p_member_id: params.memberId === "collector" ? null : params.memberId,
+        p_amount: params.amount,
+        p_date: params.date,
+        p_method: params.method || "Cash",
+        p_note: params.note || "Rapid roster",
+        p_display_id: params.displayId,
+        p_collector_id: collector.id,
       });
 
-      return { transaction };
+      if (rpcErr) throw rpcErr;
+      const txObj = rpcRes?.transaction || rpcRes;
+      return { transaction: txObj, idempotent: rpcRes?.idempotent || false };
     },
     onMutate: async (params) => {
       await queryClient.cancelQueries({ queryKey: ["transactions", collector?.id] });
@@ -1057,28 +1107,44 @@ export function useRecordCorrection() {
     }) => {
       if (!collector?.id) throw new Error("Not authenticated");
 
-      const idempotencyKey = `tx-corr-${params.groupId}-${params.memberId}-${params.supersedes}-${params.amount}`;
+      // 1. Attempt Edge Function invoke first
+      try {
+        const { data: efData, error: efErr } = await supabase.functions.invoke("record-correction", {
+          body: {
+            groupId: params.groupId,
+            memberId: params.memberId,
+            amount: params.amount,
+            date: params.date,
+            method: params.method || "Cash",
+            note: params.note || "Correction",
+            supersedes: params.supersedes,
+            originalAmount: params.originalAmount,
+          },
+        });
 
-      const { data: transaction, error: txErr } = await supabase
-        .from('transactions')
-        .insert({
-          group_id: params.groupId,
-          member_id: params.memberId === "collector" ? null : params.memberId,
-          type: "correction",
-          amount: params.amount,
-          date: params.date,
-          method: params.method || "Cash",
-          note: params.note || "Correction",
-          supersedes: params.supersedes,
-          original_amount: params.originalAmount,
-          idempotency_key: idempotencyKey,
-          collector_id: collector.id,
-        })
-        .select()
-        .single();
+        if (!efErr && efData?.transaction) {
+          return { transaction: efData.transaction };
+        }
+      } catch (err) {
+        console.warn("Edge Function record-correction notice, falling back to server RPC:", err);
+      }
 
-      if (txErr) throw txErr;
-      return { transaction };
+      // 2. Fallback to atomic SECURITY DEFINER RPC
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc("record_correction_transaction", {
+        p_group_id: params.groupId,
+        p_member_id: params.memberId === "collector" ? null : params.memberId,
+        p_amount: params.amount,
+        p_date: params.date,
+        p_method: params.method || "Cash",
+        p_note: params.note || "Correction",
+        p_supersedes: params.supersedes,
+        p_original_amount: params.originalAmount,
+        p_collector_id: collector.id,
+      });
+
+      if (rpcErr) throw rpcErr;
+      const txObj = rpcRes?.transaction || rpcRes;
+      return { transaction: txObj };
     },
     onMutate: async (params) => {
       await queryClient.cancelQueries({ queryKey: ["transactions", collector?.id] });
@@ -1122,16 +1188,28 @@ export function useCloseCycle() {
     mutationFn: async (groupId: string) => {
       if (!collector?.id) throw new Error("Not authenticated");
 
-      const { data: group, error: grpErr } = await supabase
-        .from('groups')
-        .update({ archived: true, virtual_date: null })
-        .eq('id', groupId)
-        .eq('collector_id', collector.id)
-        .select()
-        .single();
+      // 1. Attempt Edge Function invoke first
+      try {
+        const { data: efData, error: efErr } = await supabase.functions.invoke("close-cycle", {
+          body: { groupId },
+        });
 
-      if (grpErr) throw grpErr;
-      return { group };
+        if (!efErr && efData?.group) {
+          return { group: efData.group };
+        }
+      } catch (err) {
+        console.warn("Edge Function close-cycle notice, falling back to server RPC:", err);
+      }
+
+      // 2. Fallback to atomic SECURITY DEFINER RPC
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc("close_cycle_transaction", {
+        p_group_id: groupId,
+        p_collector_id: collector.id,
+      });
+
+      if (rpcErr) throw rpcErr;
+      const grpObj = rpcRes?.group || rpcRes;
+      return { group: grpObj };
     },
     onMutate: async (groupId) => {
       await queryClient.cancelQueries({ queryKey: ["groups", collector?.id] });
