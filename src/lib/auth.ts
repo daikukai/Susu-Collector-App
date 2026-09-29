@@ -51,6 +51,11 @@ export function phoneToAuthEmail(phone: string): string {
   return `collector${normalized}@susu.com`;
 }
 
+export function phoneToFallbackUuid(phone: string): string {
+  const digits = phone.replace(/[^\d]/g, "").padStart(12, "0").slice(-12);
+  return `00000000-0000-4000-8000-${digits}`;
+}
+
 export function getLocalCollectors(): Collector[] {
   try {
     const raw = typeof window !== "undefined" ? localStorage.getItem("susu_registered_collectors") : null;
@@ -122,7 +127,7 @@ export async function signUpWithPhone(phone: string, password: string, inviteCod
         sessionUser = signInData.user;
       } else {
         sessionUser = {
-          id: `user_${normalizedPhone.replace("+", "")}`,
+          id: phoneToFallbackUuid(normalizedPhone),
           email: authEmail,
           phone: normalizedPhone,
           user_metadata: { phone: normalizedPhone },
@@ -133,7 +138,7 @@ export async function signUpWithPhone(phone: string, password: string, inviteCod
       }
     } catch {
       sessionUser = {
-        id: `user_${normalizedPhone.replace("+", "")}`,
+        id: phoneToFallbackUuid(normalizedPhone),
         email: authEmail,
         phone: normalizedPhone,
         user_metadata: { phone: normalizedPhone },
@@ -296,23 +301,32 @@ export async function getCurrentUser() {
 
 // Get collector profile
 export async function getCollector(userId: string): Promise<Collector | null> {
-  const { data, error } = await supabase
-    .from("collectors")
-    .select("*")
-    .eq("id", userId)
-    .single();
+  const local = getLocalCollectors().find((c) => c.id === userId);
 
-  if (error) {
-    if (error.code === "PGRST116") return null;
-    throw error;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(userId)) {
+    return local || null;
   }
 
-  // Ensure designated super admin phone always receives is_super_admin: true
-  if (data && (data.phone === SUPER_ADMIN_PHONE)) {
-    return { ...data, is_super_admin: true };
-  }
+  try {
+    const { data, error } = await supabase
+      .from("collectors")
+      .select("*")
+      .eq("id", userId)
+      .maybeSingle();
 
-  return data;
+    if (error || !data) {
+      return local || null;
+    }
+
+    if (data && data.phone === SUPER_ADMIN_PHONE) {
+      return { ...local, ...data, is_super_admin: true };
+    }
+
+    return { ...local, ...data };
+  } catch {
+    return local || null;
+  }
 }
 
 // Create collector profile
