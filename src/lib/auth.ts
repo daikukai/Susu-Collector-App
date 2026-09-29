@@ -99,7 +99,7 @@ export async function signUpWithPhone(phone: string, password: string, inviteCod
     }
   }
 
-  const { data, error } = await supabase.auth.signUp({
+  let signUpRes = await supabase.auth.signUp({
     email: authEmail,
     password,
     options: {
@@ -109,12 +109,35 @@ export async function signUpWithPhone(phone: string, password: string, inviteCod
     },
   });
 
-  if (error) throw error;
+  let sessionUser = signUpRes.data?.user;
 
-  let sessionUser = data.user;
+  // Handle case where user record was already created in auth.users on previous attempt
+  if (signUpRes.error) {
+    const errMsg = signUpRes.error.message?.toLowerCase() || "";
+    const isUserAlreadyExists = errMsg.includes("already registered") || 
+                                errMsg.includes("already exists") ||
+                                signUpRes.error.status === 422;
+    if (isUserAlreadyExists) {
+      try {
+        const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+          email: authEmail,
+          password,
+        });
+        if (signInData?.user) {
+          sessionUser = signInData.user;
+        } else if (signInErr) {
+          throw new Error(`An account with phone number ${normalizedPhone} already exists. Please re-enter your registered password or request a reset code.`);
+        }
+      } catch (autoErr: any) {
+        throw autoErr;
+      }
+    } else {
+      throw signUpRes.error;
+    }
+  }
 
-  // Establish active session FIRST so Supabase Auth context is active for DB writes
-  if (data.user && !data.session) {
+  // Establish active session so Supabase Auth context and RLS policies are active
+  if (sessionUser && !signUpRes.data?.session) {
     try {
       const { data: signInData } = await supabase.auth.signInWithPassword({
         email: authEmail,
@@ -147,7 +170,7 @@ export async function signUpWithPhone(phone: string, password: string, inviteCod
     }
   }
 
-  return data;
+  return signUpRes.data || { user: sessionUser };
 }
 
 // Sign in with Phone Number and Password

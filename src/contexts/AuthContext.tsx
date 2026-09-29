@@ -35,8 +35,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshCollector = async () => {
-    if (user) {
-      await loadCollector(user.id, user.phone || user.user_metadata?.phone);
+    try {
+      const currentSession = await getSession();
+      const activeUser = currentSession?.user || user;
+      if (currentSession) setSession(currentSession);
+      if (activeUser) {
+        setUser(activeUser);
+        await loadCollector(activeUser.id, activeUser.phone || activeUser.user_metadata?.phone);
+      }
+    } catch (err) {
+      console.warn("refreshCollector error:", err);
     }
   };
 
