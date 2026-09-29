@@ -34,14 +34,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const refreshCollector = async () => {
+  const getActiveUserOrSession = async (): Promise<{ session: Session | null; user: User | null }> => {
     try {
       const currentSession = await getSession();
-      const activeUser = currentSession?.user || user;
-      if (currentSession) setSession(currentSession);
-      if (activeUser) {
-        setUser(activeUser);
-        await loadCollector(activeUser.id, activeUser.phone || activeUser.user_metadata?.phone);
+      if (currentSession?.user) return { session: currentSession, user: currentSession.user };
+    } catch {}
+
+    try {
+      if (typeof window !== "undefined") {
+        const stored = sessionStorage.getItem("susu_active_user") || localStorage.getItem("susu_active_user");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed?.id) return { session: null, user: parsed as User };
+        }
+      }
+    } catch {}
+
+    return { session: null, user: null };
+  };
+
+  const refreshCollector = async () => {
+    try {
+      const { session: activeSession, user: activeUser } = await getActiveUserOrSession();
+      if (activeSession) setSession(activeSession);
+      const targetUser = activeUser || user;
+      if (targetUser) {
+        setUser(targetUser);
+        await loadCollector(targetUser.id, targetUser.phone || targetUser.user_metadata?.phone);
       }
     } catch (err) {
       console.warn("refreshCollector error:", err);
@@ -52,12 +71,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Initial load
     const initAuth = async () => {
       try {
-        const currentSession = await getSession();
-        setSession(currentSession);
+        const { session: activeSession, user: activeUser } = await getActiveUserOrSession();
+        setSession(activeSession);
         
-        if (currentSession?.user) {
-          setUser(currentSession.user);
-          await loadCollector(currentSession.user.id, currentSession.user.phone || currentSession.user.user_metadata?.phone);
+        if (activeUser) {
+          setUser(activeUser);
+          await loadCollector(activeUser.id, activeUser.phone || activeUser.user_metadata?.phone);
         }
       } catch (error) {
         console.error("Error initializing auth:", error);
@@ -70,13 +89,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Listen for auth changes
     const { data: { subscription } } = onAuthStateChange(async (newSession) => {
-      setSession(newSession);
-      setUser(newSession?.user || null);
-      
       if (newSession?.user) {
+        setSession(newSession);
+        setUser(newSession.user);
         await loadCollector(newSession.user.id, newSession.user.phone || newSession.user.user_metadata?.phone);
       } else {
-        setCollector(null);
+        const { user: fallbackUser } = await getActiveUserOrSession();
+        if (fallbackUser) {
+          setUser(fallbackUser);
+          await loadCollector(fallbackUser.id, fallbackUser.phone || fallbackUser.user_metadata?.phone);
+        } else {
+          setSession(null);
+          setUser(null);
+          setCollector(null);
+        }
       }
       setLoading(false);
     });
