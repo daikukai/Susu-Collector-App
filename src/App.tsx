@@ -6,6 +6,7 @@ import { SusuCardModal } from "./components/SusuCardModal";
 import UserProfileModal from "./components/UserProfileModal";
 import MasterAdminPortal from "./components/MasterAdminPortal";
 import SusuLogo from "./components/SusuLogo";
+import ExportLedgerModal, { exportLedgerCsv } from "./components/ExportLedgerModal";
 import {
   useGroups,
   useMembers,
@@ -1373,6 +1374,7 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
   // ── Ledger ──
   const [ledType, setLedType] = useState("all");
   const [ledMethod, setLedMethod] = useState("all");
+  const [showExportModal, setShowExportModal] = useState(false);
   const allGroupTx = state.transactions.filter((tx) => tx.groupId === g.id && !sup[tx.id]).sort((a, b) => (a.timestamp || a.date).localeCompare(b.timestamp || b.date));
   let running = 0;
   const withBalance = allGroupTx.map((tx) => {
@@ -1505,7 +1507,7 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
       {/* ── Ledger ── */}
       {sub === "Ledger" && (
         <div className="space-y-3">
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             <Sel value={ledType} onChange={setLedType}>
               <option value="all">All types</option>
               <option value="contribution">Contributions</option>
@@ -1519,6 +1521,15 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
               <option value="MTN">MTN</option>
               <option value="Orange">Orange</option>
             </Sel>
+            <button
+              onClick={() => setShowExportModal(true)}
+              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1 flex-shrink-0"
+              title="Export Ledger & Audit Trail based on your selection"
+            >
+              <span>📥</span>
+              <span className="hidden sm:inline">Export CSV</span>
+              <span className="sm:hidden">Export</span>
+            </button>
           </div>
           <div className="grid grid-cols-3 gap-2">
             {[
@@ -1563,6 +1574,12 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
             })}
             {ledRows.length === 0 && <p className="p-4 text-sm text-gray-400 text-center">No transactions match this filter.</p>}
           </Card>
+          <ExportLedgerModal
+            isOpen={showExportModal}
+            onClose={() => setShowExportModal(false)}
+            state={state}
+            activeGroupId={g.id}
+          />
         </div>
       )}
     </div>
@@ -1695,21 +1712,42 @@ function ReconcileSub({ state, g, t, onBack }: { state: AppState; g: Group; t: R
 
       {subTab === "Ledger Audit Trail" && (
         <div className="space-y-3">
-          <div className="flex gap-1.5 overflow-x-auto pb-1">
-            {[
-              { id: "all", label: `All (${groupTxs.length})` },
-              { id: "contributions", label: "Contributions" },
-              { id: "payouts", label: "Payouts" },
-              { id: "corrections", label: "Corrections" },
-            ].map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setTxFilter(f.id)}
-                className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all flex-shrink-0 ${txFilter === f.id ? "bg-emerald-600 text-white" : "bg-gray-100 text-gray-500"}`}
-              >
-                {f.label}
-              </button>
-            ))}
+          <div className="flex items-center justify-between gap-1.5 pb-1 overflow-x-auto">
+            <div className="flex gap-1.5 overflow-x-auto">
+              {[
+                { id: "all", label: `All (${groupTxs.length})` },
+                { id: "contributions", label: "Contributions" },
+                { id: "payouts", label: "Payouts" },
+                { id: "corrections", label: "Corrections" },
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => setTxFilter(f.id)}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all flex-shrink-0 ${txFilter === f.id ? "bg-emerald-600 text-white" : "bg-gray-100 text-gray-500"}`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() =>
+                exportLedgerCsv(
+                  state.transactions,
+                  state.members,
+                  state.groups,
+                  state.collectorName,
+                  txFilter,
+                  "all",
+                  g.id
+                )
+              }
+              className="text-xs font-bold px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-all flex items-center gap-1 flex-shrink-0 shadow-xs"
+              title="Download selected audit trail CSV"
+            >
+              <span>📥</span>
+              <span className="hidden sm:inline">Export CSV</span>
+              <span className="sm:hidden">CSV</span>
+            </button>
           </div>
 
           <Card className="overflow-hidden">
