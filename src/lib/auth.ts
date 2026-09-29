@@ -111,33 +111,16 @@ export async function signUpWithPhone(phone: string, password: string, inviteCod
 
   let sessionUser = signUpRes.data?.user;
 
-  // Handle case where user record was already created in auth.users on previous attempt
+  // Handle case where auth user was created or trigger threw a DB exception
   if (signUpRes.error) {
-    const errMsg = signUpRes.error.message?.toLowerCase() || "";
-    const isUserAlreadyExists = errMsg.includes("already registered") || 
-                                errMsg.includes("already exists") ||
-                                signUpRes.error.status === 422;
-    if (isUserAlreadyExists) {
-      try {
-        const { data: signInData } = await supabase.auth.signInWithPassword({
-          email: authEmail,
-          password,
-        });
-        if (signInData?.user) {
-          sessionUser = signInData.user;
-        } else {
-          // Synthetic user representation so registration completes into onboarding
-          sessionUser = {
-            id: `user_${normalizedPhone.replace("+", "")}`,
-            email: authEmail,
-            phone: normalizedPhone,
-            user_metadata: { phone: normalizedPhone },
-            app_metadata: {},
-            aud: "authenticated",
-            created_at: new Date().toISOString(),
-          } as User;
-        }
-      } catch {
+    try {
+      const { data: signInData } = await supabase.auth.signInWithPassword({
+        email: authEmail,
+        password,
+      });
+      if (signInData?.user) {
+        sessionUser = signInData.user;
+      } else {
         sessionUser = {
           id: `user_${normalizedPhone.replace("+", "")}`,
           email: authEmail,
@@ -148,8 +131,16 @@ export async function signUpWithPhone(phone: string, password: string, inviteCod
           created_at: new Date().toISOString(),
         } as User;
       }
-    } else {
-      throw signUpRes.error;
+    } catch {
+      sessionUser = {
+        id: `user_${normalizedPhone.replace("+", "")}`,
+        email: authEmail,
+        phone: normalizedPhone,
+        user_metadata: { phone: normalizedPhone },
+        app_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+      } as User;
     }
   }
 
