@@ -23,7 +23,9 @@ export function exportLedgerCsv(
   collectorName: string,
   filterType: string = "all",
   filterMethod: string = "all",
-  selectedGroupId: string = "all"
+  selectedGroupId: string = "all",
+  selectedMemberId: string = "all",
+  searchQuery: string = ""
 ) {
   const filtered = transactions.filter((tx) => {
     const matchesGroup = selectedGroupId === "all" || tx.groupId === selectedGroupId;
@@ -34,7 +36,24 @@ export function exportLedgerCsv(
       (filterType === "collector_fees" && tx.type === "collector_fee") ||
       (filterType === "corrections" && tx.type === "correction");
     const matchesMethod = filterMethod === "all" || tx.method === filterMethod;
-    return matchesGroup && matchesType && matchesMethod;
+    const matchesMember = selectedMemberId === "all" || tx.memberId === selectedMemberId;
+
+    let matchesQuery = true;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const m = members.find((x) => x.id === tx.memberId);
+      const mName = tx.memberId === "collector" ? `${collectorName} (Fee)` : (m?.name || "");
+      const mCode = m?.memberCode || "";
+      const displayId = tx.displayId || tx.id || "";
+      const note = tx.note || "";
+      matchesQuery =
+        mName.toLowerCase().includes(q) ||
+        mCode.toLowerCase().includes(q) ||
+        displayId.toLowerCase().includes(q) ||
+        note.toLowerCase().includes(q);
+    }
+
+    return matchesGroup && matchesType && matchesMethod && matchesMember && matchesQuery;
   });
 
   const sorted = [...filtered].sort((a, b) =>
@@ -114,7 +133,9 @@ export function exportLedgerPdf(
   collectorName: string,
   filterType: string = "all",
   filterMethod: string = "all",
-  selectedGroupId: string = "all"
+  selectedGroupId: string = "all",
+  selectedMemberId: string = "all",
+  searchQuery: string = ""
 ) {
   const filtered = transactions.filter((tx) => {
     const matchesGroup = selectedGroupId === "all" || tx.groupId === selectedGroupId;
@@ -125,7 +146,24 @@ export function exportLedgerPdf(
       (filterType === "collector_fees" && tx.type === "collector_fee") ||
       (filterType === "corrections" && tx.type === "correction");
     const matchesMethod = filterMethod === "all" || tx.method === filterMethod;
-    return matchesGroup && matchesType && matchesMethod;
+    const matchesMember = selectedMemberId === "all" || tx.memberId === selectedMemberId;
+
+    let matchesQuery = true;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const m = members.find((x) => x.id === tx.memberId);
+      const mName = tx.memberId === "collector" ? `${collectorName} (Fee)` : (m?.name || "");
+      const mCode = m?.memberCode || "";
+      const displayId = tx.displayId || tx.id || "";
+      const note = tx.note || "";
+      matchesQuery =
+        mName.toLowerCase().includes(q) ||
+        mCode.toLowerCase().includes(q) ||
+        displayId.toLowerCase().includes(q) ||
+        note.toLowerCase().includes(q);
+    }
+
+    return matchesGroup && matchesType && matchesMethod && matchesMember && matchesQuery;
   });
 
   const sorted = [...filtered].sort((a, b) =>
@@ -313,6 +351,8 @@ export default function ExportLedgerModal({
   const [selectedGroup, setSelectedGroup] = useState<string>(activeGroupId || "all");
   const [selectedType, setSelectedType] = useState<string>("all");
   const [selectedMethod, setSelectedMethod] = useState<string>("all");
+  const [selectedMember, setSelectedMember] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedFormat, setSelectedFormat] = useState<"csv" | "pdf">("csv");
   const [exportSuccess, setExportSuccess] = useState<string>("");
 
@@ -327,7 +367,9 @@ export default function ExportLedgerModal({
         state.collectorName,
         selectedType,
         selectedMethod,
-        selectedGroup
+        selectedGroup,
+        selectedMember,
+        searchQuery
       );
       setExportSuccess("PDF Financial Statement generated for printing/saving! 📄");
     } else {
@@ -338,7 +380,9 @@ export default function ExportLedgerModal({
         state.collectorName,
         selectedType,
         selectedMethod,
-        selectedGroup
+        selectedGroup,
+        selectedMember,
+        searchQuery
       );
       setExportSuccess("Ledger report generated and CSV downloaded! 📊");
     }
@@ -358,7 +402,24 @@ export default function ExportLedgerModal({
       (selectedType === "collector_fees" && tx.type === "collector_fee") ||
       (selectedType === "corrections" && tx.type === "correction");
     const matchesMethod = selectedMethod === "all" || tx.method === selectedMethod;
-    return matchesGroup && matchesType && matchesMethod;
+    const matchesMember = selectedMember === "all" || tx.memberId === selectedMember;
+
+    let matchesQuery = true;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const m = state.members.find((x) => x.id === tx.memberId);
+      const mName = tx.memberId === "collector" ? `${state.collectorName} (Fee)` : (m?.name || "");
+      const mCode = m?.memberCode || "";
+      const displayId = tx.displayId || tx.id || "";
+      const note = tx.note || "";
+      matchesQuery =
+        mName.toLowerCase().includes(q) ||
+        mCode.toLowerCase().includes(q) ||
+        displayId.toLowerCase().includes(q) ||
+        note.toLowerCase().includes(q);
+    }
+
+    return matchesGroup && matchesType && matchesMethod && matchesMember && matchesQuery;
   }).length;
 
   return (
@@ -461,6 +522,40 @@ export default function ExportLedgerModal({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {/* Filter 1b: Member Selection */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                  Specific Member Filter
+                </label>
+                <select
+                  value={selectedMember}
+                  onChange={(e) => setSelectedMember(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-200 text-gray-800 text-xs font-medium rounded-xl px-3 py-2.5 focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="all">All Members ({state.members.length})</option>
+                  {state.members.map((m: Member) => (
+                    <option key={m.id} value={m.id}>
+                      {m.memberCode ? `${m.memberCode} - ` : ""}{m.name}
+                    </option>
+                  ))}
+                  <option value="collector">Collector Fees ({state.collectorName})</option>
+                </select>
+              </div>
+
+              {/* Filter 1c: Search Keyword */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                  Search Keywords / Receipt ID
+                </label>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="e.g. Grace, MB102, SUSU-2026..."
+                  className="w-full bg-gray-50 border border-gray-200 text-gray-800 text-xs font-medium rounded-xl px-3 py-2.5 focus:outline-none focus:border-emerald-500"
+                />
               </div>
 
               {/* Filter 2: Transaction Type Selection */}

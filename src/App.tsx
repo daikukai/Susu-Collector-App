@@ -1392,8 +1392,14 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
   // ── Ledger ──
   const [ledType, setLedType] = useState("all");
   const [ledMethod, setLedMethod] = useState("all");
+  const [ledMemberId, setLedMemberId] = useState("all");
+  const [ledSearchQuery, setLedSearchQuery] = useState("");
   const [showExportModal, setShowExportModal] = useState(false);
-  const allGroupTx = state.transactions.filter((tx) => tx.groupId === g.id && !sup[tx.id]).sort((a, b) => (a.timestamp || a.date).localeCompare(b.timestamp || b.date));
+
+  const allGroupTx = state.transactions
+    .filter((tx) => tx.groupId === g.id && !sup[tx.id])
+    .sort((a, b) => (a.timestamp || a.date).localeCompare(b.timestamp || b.date));
+
   let running = 0;
   const withBalance = allGroupTx.map((tx) => {
     const rootType = getRootTxType(tx, state.transactions);
@@ -1404,9 +1410,41 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
     }
     return { tx, runningBalance: running };
   });
+
   const ledRows = withBalance
-    .filter(({ tx }) => (ledType === "all" || tx.type === ledType) && (ledMethod === "all" || tx.method === ledMethod))
+    .filter(({ tx }) => {
+      const matchesType = ledType === "all" || tx.type === ledType;
+      const matchesMethod = ledMethod === "all" || tx.method === ledMethod;
+      const matchesMember = ledMemberId === "all" || tx.memberId === ledMemberId;
+
+      let matchesQuery = true;
+      if (ledSearchQuery.trim()) {
+        const q = ledSearchQuery.toLowerCase().trim();
+        const m = state.members.find((x) => x.id === tx.memberId);
+        const mName = tx.memberId === "collector" ? state.collectorName : (m?.name || "");
+        const mCode = m?.memberCode || "";
+        const mPhone = m?.phone || "";
+        const displayId = tx.displayId || tx.id || "";
+        const note = tx.note || "";
+        const date = tx.date || "";
+
+        matchesQuery =
+          mName.toLowerCase().includes(q) ||
+          mCode.toLowerCase().includes(q) ||
+          mPhone.toLowerCase().includes(q) ||
+          displayId.toLowerCase().includes(q) ||
+          note.toLowerCase().includes(q) ||
+          date.toLowerCase().includes(q);
+      }
+
+      return matchesType && matchesMethod && matchesMember && matchesQuery;
+    })
     .reverse();
+
+  const selectedMemberObj = ledMemberId !== "all" ? state.members.find((m) => m.id === ledMemberId) : null;
+  const isLedgerFiltered = ledMemberId !== "all" || ledSearchQuery.trim() !== "";
+  const filterTotalIn = ledRows.filter(({ tx }) => tx.type === "contribution").reduce((s, { tx }) => s + tx.amount, 0);
+  const filterTotalOut = ledRows.filter(({ tx }) => tx.type === "payout" || tx.type === "collector_fee").reduce((s, { tx }) => s + tx.amount, 0);
 
   return (
     <div>
@@ -1525,7 +1563,46 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
       {/* ── Ledger ── */}
       {sub === "Ledger" && (
         <div className="space-y-3">
+          {/* Member Search Bar & Export Button */}
           <div className="flex gap-2 items-center">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={ledSearchQuery}
+                onChange={(e) => setLedSearchQuery(e.target.value)}
+                placeholder="🔍 Search member name, code, phone, receipt ID..."
+                className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-emerald-500 shadow-xs pr-8"
+              />
+              {ledSearchQuery && (
+                <button
+                  onClick={() => setLedSearchQuery("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs font-bold"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <button
+              onClick={() => setShowExportModal(true)}
+              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1 flex-shrink-0"
+              title="Export Ledger & Audit Trail based on your selection"
+            >
+              <span>📥</span>
+              <span>Export</span>
+            </button>
+          </div>
+
+          {/* Filter Dropdowns (Member, Type, Method) */}
+          <div className="grid grid-cols-3 gap-2">
+            <Sel value={ledMemberId} onChange={setLedMemberId}>
+              <option value="all">All Members ({members.length})</option>
+              {members.map((m, idx) => (
+                <option key={m.id} value={m.id}>
+                  {getMemberCode(m, idx)} - {m.name}
+                </option>
+              ))}
+              {hasCollectorPayout && <option value="collector">Fee ({state.collectorName})</option>}
+            </Sel>
             <Sel value={ledType} onChange={setLedType}>
               <option value="all">All types</option>
               <option value="contribution">Contributions</option>
@@ -1539,35 +1616,60 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
               <option value="MTN">MTN</option>
               <option value="Orange">Orange</option>
             </Sel>
-            <button
-              onClick={() => setShowExportModal(true)}
-              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1 flex-shrink-0"
-              title="Export Ledger & Audit Trail based on your selection"
-            >
-              <span>📥</span>
-              <span>Export</span>
-            </button>
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { label: "Total in", val: fmt(t.contributions, g.currency), color: "text-emerald-700 bg-emerald-50" },
-              { label: "Paid out", val: fmt(t.payouts, g.currency), color: "text-red-600 bg-red-50" },
-              { label: "Pot balance", val: fmt(t.balance, g.currency), color: "text-blue-700 bg-blue-50" },
-            ].map((s) => (
-              <div key={s.label} className={`rounded-xl p-2.5 text-center ${s.color}`}>
-                <p className="text-xs opacity-70 mb-0.5">{s.label}</p>
-                <p className="text-xs font-bold leading-tight">{s.val}</p>
+
+          {/* Active Member Search / Filter Summary Banner */}
+          {isLedgerFiltered && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between gap-2 animate-fade-in">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900 truncate">
+                  <span>👤</span>
+                  <span>
+                    {selectedMemberObj
+                      ? `${selectedMemberObj.name} (${getMemberCode(selectedMemberObj)})`
+                      : ledMemberId === "collector"
+                      ? `${state.collectorName} (Collector Fees)`
+                      : `Search: "${ledSearchQuery}"`}
+                  </span>
+                </div>
+                <p className="text-[11px] text-emerald-700 mt-0.5 font-medium">
+                  {ledRows.length} transaction{ledRows.length === 1 ? "" : "s"} found · Contributed: <strong>{fmt(filterTotalIn, g.currency)}</strong> · Paid Out: <strong>{fmt(filterTotalOut, g.currency)}</strong>
+                </p>
               </div>
-            ))}
-          </div>
+              <button
+                onClick={() => { setLedMemberId("all"); setLedSearchQuery(""); }}
+                className="text-[11px] font-bold text-emerald-800 bg-white hover:bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-xl transition-all flex-shrink-0 shadow-xs"
+              >
+                ✕ Clear
+              </button>
+            </div>
+          )}
+
+          {/* Group Totals summary cards */}
+          {!isLedgerFiltered && (
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: "Total in", val: fmt(t.contributions, g.currency), color: "text-emerald-700 bg-emerald-50" },
+                { label: "Paid out", val: fmt(t.payouts, g.currency), color: "text-red-600 bg-red-50" },
+                { label: "Pot balance", val: fmt(t.balance, g.currency), color: "text-blue-700 bg-blue-50" },
+              ].map((s) => (
+                <div key={s.label} className={`rounded-xl p-2.5 text-center ${s.color}`}>
+                  <p className="text-xs opacity-70 mb-0.5">{s.label}</p>
+                  <p className="text-xs font-bold leading-tight">{s.val}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
           <Card>
             <div className="flex items-center justify-between px-3.5 py-2 border-b border-gray-100 bg-gray-50 rounded-t-2xl">
-              <p className="text-xs font-semibold text-gray-400 flex-1">Member · type</p>
+              <p className="text-xs font-semibold text-gray-400 flex-1">Member · Receipt &amp; type</p>
               <p className="text-xs font-semibold text-gray-400 w-28 text-right">Date &amp; time</p>
               <p className="text-xs font-semibold text-gray-400 w-20 text-right">Amount</p>
             </div>
             {ledRows.map(({ tx, runningBalance }, i) => {
               const m = state.members.find((x) => x.id === tx.memberId);
+              const mCode = m ? getMemberCode(m) : "";
               const rootType = getRootTxType(tx, state.transactions);
               const isDebit = rootType === "payout" || rootType === "collector_fee";
               const isCorrection = tx.type === "correction";
@@ -1576,8 +1678,12 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
                 <div key={tx.id} className={`px-3.5 py-3 ${i < ledRows.length - 1 ? "border-b border-gray-50" : ""}`}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800 truncate">{name}{isCorrection ? " (correction)" : isDebit ? " (payout)" : ""}</p>
-                      <p className="text-[10px] text-gray-400 mt-0.5">{fmtTimestamp(tx.timestamp || tx.date)} · {tx.method}</p>
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        {mCode && <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded">{mCode}</span>}
+                        <p className="text-sm font-medium text-gray-800 truncate">{name}{isCorrection ? " (correction)" : isDebit ? " (payout)" : ""}</p>
+                      </div>
+                      <p className="text-[10px] text-gray-400 font-mono truncate">{tx.displayId || tx.id} · {fmtTimestamp(tx.timestamp || tx.date)} · {tx.method}</p>
+                      {tx.note && <p className="text-[10px] text-gray-500 italic truncate mt-0.5">"{tx.note}"</p>}
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className={`text-sm font-semibold ${isDebit ? "text-red-600" : "text-emerald-600"}`}>
@@ -1589,7 +1695,7 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
                 </div>
               );
             })}
-            {ledRows.length === 0 && <p className="p-4 text-sm text-gray-400 text-center">No transactions match this filter.</p>}
+            {ledRows.length === 0 && <p className="p-6 text-sm text-gray-400 text-center">No member transactions match your search filter.</p>}
           </Card>
           <ExportLedgerModal
             isOpen={showExportModal}
@@ -1615,6 +1721,7 @@ function BackBtn({ onClick, label = "Admin" }: { onClick: () => void; label?: st
 function ReconcileSub({ state, g, t, onBack }: { state: AppState; g: Group; t: ReturnType<typeof groupTotals>; onBack: () => void }) {
   const [subTab, setSubTab] = useState("Summary");
   const [txFilter, setTxFilter] = useState("all");
+  const [auditSearchQuery, setAuditSearchQuery] = useState("");
   const [isAuditing, setIsAuditing] = useState(false);
   const [auditResult, setAuditResult] = useState<string | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -1626,10 +1733,28 @@ function ReconcileSub({ state, g, t, onBack }: { state: AppState; g: Group; t: R
 
   // Filtered ledger transactions
   const filteredTxs = groupTxs.filter((tx) => {
-    if (txFilter === "contributions") return tx.type === "contribution";
-    if (txFilter === "payouts") return tx.type === "payout";
-    if (txFilter === "corrections") return tx.type === "correction";
-    return true;
+    const matchesFilter =
+      txFilter === "all" ||
+      (txFilter === "contributions" && tx.type === "contribution") ||
+      (txFilter === "payouts" && tx.type === "payout") ||
+      (txFilter === "corrections" && tx.type === "correction");
+
+    let matchesSearch = true;
+    if (auditSearchQuery.trim()) {
+      const q = auditSearchQuery.toLowerCase().trim();
+      const m = state.members.find((x) => x.id === tx.memberId);
+      const mName = tx.memberId === "collector" ? "Collector Fee" : (m?.name || "");
+      const mCode = m ? getMemberCode(m) : "";
+      const displayId = tx.displayId || tx.id || "";
+      const note = tx.note || "";
+      matchesSearch =
+        mName.toLowerCase().includes(q) ||
+        mCode.toLowerCase().includes(q) ||
+        displayId.toLowerCase().includes(q) ||
+        note.toLowerCase().includes(q);
+    }
+
+    return matchesFilter && matchesSearch;
   });
 
   const runFullAudit = () => {
@@ -1730,6 +1855,25 @@ function ReconcileSub({ state, g, t, onBack }: { state: AppState; g: Group; t: R
 
       {subTab === "Ledger Audit Trail" && (
         <div className="space-y-3">
+          {/* Audit Trail Search Bar */}
+          <div className="relative">
+            <input
+              type="text"
+              value={auditSearchQuery}
+              onChange={(e) => setAuditSearchQuery(e.target.value)}
+              placeholder="🔍 Search audit trail by member name, code, receipt ID..."
+              className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-emerald-500 shadow-xs pr-8"
+            />
+            {auditSearchQuery && (
+              <button
+                onClick={() => setAuditSearchQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs font-bold"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
           <div className="flex items-center justify-between gap-1.5 pb-1 overflow-x-auto">
             <div className="flex gap-1.5 overflow-x-auto">
               {[
