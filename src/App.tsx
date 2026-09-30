@@ -7,6 +7,7 @@ import UserProfileModal from "./components/UserProfileModal";
 import MasterAdminPortal from "./components/MasterAdminPortal";
 import SusuLogo from "./components/SusuLogo";
 import ExportLedgerModal, { exportLedgerCsv } from "./components/ExportLedgerModal";
+import ExportMembersModal from "./components/ExportMembersModal";
 import {
   useGroups,
   useMembers,
@@ -1032,6 +1033,7 @@ function MembersTab({ state, setState }: { state: AppState; setState: (s: AppSta
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [cardMember, setCardMember] = useState<Member | null>(null);
+  const [showExportMembersModal, setShowExportMembersModal] = useState(false);
 
   const confirmDelete = (mId: string) => {
     setState({
@@ -1117,9 +1119,19 @@ function MembersTab({ state, setState }: { state: AppState; setState: (s: AppSta
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-xs text-gray-400">{members.length} member{members.length !== 1 ? "s" : ""} · {g.name}</p>
-        <button onClick={() => setShowAdd(!showAdd)} className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${showAdd ? "bg-gray-100 text-gray-500" : "bg-emerald-600 text-white"}`}>
-          {showAdd ? "Cancel" : "+ Add member"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowExportMembersModal(true)}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-1 transition-all shadow-xs"
+            title="Export Member List & Roster"
+          >
+            <span>📥</span>
+            <span>Export</span>
+          </button>
+          <button onClick={() => setShowAdd(!showAdd)} className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${showAdd ? "bg-gray-100 text-gray-500" : "bg-emerald-600 text-white"}`}>
+            {showAdd ? "Cancel" : "+ Add member"}
+          </button>
+        </div>
       </div>
 
       {showAdd && (
@@ -1270,6 +1282,12 @@ function MembersTab({ state, setState }: { state: AppState; setState: (s: AppSta
           onClose={() => setCardMember(null)}
         />
       )}
+      <ExportMembersModal
+        isOpen={showExportMembersModal}
+        onClose={() => setShowExportMembersModal(false)}
+        state={state}
+        activeGroupId={g.id}
+      />
     </div>
   );
 }
@@ -1527,8 +1545,7 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
               title="Export Ledger & Audit Trail based on your selection"
             >
               <span>📥</span>
-              <span className="hidden sm:inline">Export CSV</span>
-              <span className="sm:hidden">Export</span>
+              <span>Export</span>
             </button>
           </div>
           <div className="grid grid-cols-3 gap-2">
@@ -1600,6 +1617,7 @@ function ReconcileSub({ state, g, t, onBack }: { state: AppState; g: Group; t: R
   const [txFilter, setTxFilter] = useState("all");
   const [isAuditing, setIsAuditing] = useState(false);
   const [auditResult, setAuditResult] = useState<string | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   const groupTxs = state.transactions.filter((x) => x.groupId === g.id);
   const corrections = groupTxs.filter((x) => x.type === "correction");
@@ -1730,23 +1748,12 @@ function ReconcileSub({ state, g, t, onBack }: { state: AppState; g: Group; t: R
               ))}
             </div>
             <button
-              onClick={() =>
-                exportLedgerCsv(
-                  state.transactions,
-                  state.members,
-                  state.groups,
-                  state.collectorName,
-                  txFilter,
-                  "all",
-                  g.id
-                )
-              }
+              onClick={() => setShowExportModal(true)}
               className="text-xs font-bold px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-all flex items-center gap-1 flex-shrink-0 shadow-xs"
-              title="Download selected audit trail CSV"
+              title="Export Ledger & Audit Trail based on your selection"
             >
               <span>📥</span>
-              <span className="hidden sm:inline">Export CSV</span>
-              <span className="sm:hidden">CSV</span>
+              <span>Export</span>
             </button>
           </div>
 
@@ -1806,6 +1813,12 @@ function ReconcileSub({ state, g, t, onBack }: { state: AppState; g: Group; t: R
           </Card>
         </div>
       )}
+      <ExportLedgerModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        state={state}
+        activeGroupId={g.id}
+      />
     </div>
   );
 }
