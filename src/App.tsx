@@ -1010,7 +1010,15 @@ function CollectTab({ state, setState, initialSub = "Roster", goHome }: {
 }
 
 // ── MEMBERS TAB ────────────────────────────────────────────────────────────────
-function MembersTab({ state, setState }: { state: AppState; setState: (s: AppState) => void }) {
+function MembersTab({
+  state,
+  setState,
+  goFinanceLedger,
+}: {
+  state: AppState;
+  setState: (s: AppState) => void;
+  goFinanceLedger?: (memberId: string) => void;
+}) {
   const g = state.groups.find((gr) => gr.id === state.activeGroupId && !gr.archived) || state.groups.find((gr) => !gr.archived) || state.groups[0];
   if (!g) {
     return (
@@ -1180,6 +1188,16 @@ function MembersTab({ state, setState }: { state: AppState; setState: (s: AppSta
                     )}
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
+                    {goFinanceLedger && (
+                      <button
+                        onClick={() => goFinanceLedger(m.id)}
+                        title="View complete transaction ledger for this member"
+                        className="flex items-center justify-center px-2 py-1 gap-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold transition-all active:scale-95"
+                      >
+                        <span className="text-[11px]">📜</span>
+                        <span>Ledger</span>
+                      </button>
+                    )}
                     <button
                       onClick={() => setCardMember(m)}
                       title="Generate & View Susu Card"
@@ -1293,7 +1311,17 @@ function MembersTab({ state, setState }: { state: AppState; setState: (s: AppSta
 }
 
 // ── FINANCE TAB ────────────────────────────────────────────────────────────────
-function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppState; setState: (s: AppState) => void; initialSub?: string }) {
+function FinanceTab({
+  state,
+  setState,
+  initialSub = "Arrears",
+  initialMemberId = "all",
+}: {
+  state: AppState;
+  setState: (s: AppState) => void;
+  initialSub?: string;
+  initialMemberId?: string;
+}) {
   const [sub, setSub] = useState(initialSub);
   const g = state.groups.find((gr) => gr.id === state.activeGroupId && !gr.archived) || state.groups.find((gr) => !gr.archived) || state.groups[0];
   if (!g) {
@@ -1392,7 +1420,7 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
   // ── Ledger ──
   const [ledType, setLedType] = useState("all");
   const [ledMethod, setLedMethod] = useState("all");
-  const [ledMemberId, setLedMemberId] = useState("all");
+  const [ledMemberId, setLedMemberId] = useState(initialMemberId);
   const [ledSearchQuery, setLedSearchQuery] = useState("");
   const [showExportModal, setShowExportModal] = useState(false);
 
@@ -1447,7 +1475,63 @@ function FinanceTab({ state, setState, initialSub = "Arrears" }: { state: AppSta
   const filterTotalOut = ledRows.filter(({ tx }) => tx.type === "payout" || tx.type === "collector_fee").reduce((s, { tx }) => s + tx.amount, 0);
 
   return (
-    <div>
+    <div className="space-y-3">
+      {/* ── Top Member Search Card ── */}
+      <Card className="p-3.5 bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-800 text-white shadow-md">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            setSub("Ledger");
+          }}
+          className="space-y-2"
+        >
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] font-bold text-emerald-200 uppercase tracking-wider flex items-center gap-1.5">
+              <span>🔍</span>
+              <span>Search Member Transactions &amp; Ledger</span>
+            </label>
+            {isLedgerFiltered && (
+              <span className="text-[10px] font-semibold bg-emerald-700 text-emerald-100 px-2 py-0.5 rounded-md">
+                Filter Active
+              </span>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={ledSearchQuery}
+                onChange={(e) => {
+                  setLedSearchQuery(e.target.value);
+                  if (e.target.value.trim() && sub !== "Ledger") {
+                    setSub("Ledger");
+                  }
+                }}
+                placeholder="Type member name, code (e.g. MB101), phone, or receipt ID..."
+                className="w-full bg-white text-gray-900 placeholder:text-gray-400 text-xs font-medium rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-400 shadow-inner pr-8"
+              />
+              {ledSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setLedSearchQuery("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs font-bold"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <button
+              type="submit"
+              onClick={() => setSub("Ledger")}
+              className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 flex-shrink-0"
+            >
+              <span>🔍</span>
+              <span>Search</span>
+            </button>
+          </div>
+        </form>
+      </Card>
+
       <InlineTab tabs={["Arrears", "Payouts", "Ledger"]} active={sub} onChange={setSub} />
 
       {/* ── Arrears ── */}
@@ -2837,6 +2921,14 @@ export default function App({ collectorName = "Collector" }: AppProps) {
     }
   }, [activeGroups, activeGroupId]);
 
+  const [targetLedgerMemberId, setTargetLedgerMemberId] = useState<string>("all");
+
+  const goFinanceLedger = (memberId: string) => {
+    setTargetLedgerMemberId(memberId);
+    setFinanceSub("Ledger");
+    setTab("finance");
+  };
+
   const tabLabel: Record<NavTab, string> = { today: "Home", collect: "Collect", members: "Members", finance: "Finance", admin: "Admin" };
 
   const renderTab = () => {
@@ -2844,8 +2936,8 @@ export default function App({ collectorName = "Collector" }: AppProps) {
     switch (tab) {
       case "today": return <TodayTab state={state} setState={setState} goCollect={goCollect} goFinance={goFinance} />;
       case "collect": return <CollectTab key={collectSub} state={state} setState={setState} initialSub={collectSub} goHome={goHome} />;
-      case "members": return <MembersTab state={state} setState={setState} />;
-      case "finance": return <FinanceTab key={financeSub} state={state} setState={setState} initialSub={financeSub} />;
+      case "members": return <MembersTab state={state} setState={setState} goFinanceLedger={goFinanceLedger} />;
+      case "finance": return <FinanceTab key={`${financeSub}-${targetLedgerMemberId}`} state={state} setState={setState} initialSub={financeSub} initialMemberId={targetLedgerMemberId} />;
       case "admin": return <AdminTab state={state} setState={setState} goMembers={() => setTab("members")} />;
     }
   };
