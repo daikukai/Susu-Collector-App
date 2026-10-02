@@ -208,14 +208,19 @@ function mkSms(memberId: string, kind: string, content: string): SmsEntry {
 function deduplicateTransactions(txs: Tx[]): Tx[] {
   const seenIds = new Set<string>();
   const seenDisplayIds = new Set<string>();
+  const seenCompositeKeys = new Set<string>();
   const result: Tx[] = [];
 
   for (const t of txs) {
     if (seenIds.has(t.id)) continue;
     if (t.displayId && seenDisplayIds.has(t.displayId)) continue;
 
+    const compKey = `${t.groupId}-${t.memberId}-${t.date}-${t.amount}-${t.type}`;
+    if (seenCompositeKeys.has(compKey)) continue;
+
     seenIds.add(t.id);
     if (t.displayId) seenDisplayIds.add(t.displayId);
+    seenCompositeKeys.add(compKey);
     result.push(t);
   }
   return result;

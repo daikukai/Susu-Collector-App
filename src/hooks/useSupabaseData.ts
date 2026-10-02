@@ -308,7 +308,23 @@ async function recordLedgerTransaction(
         timestamp: new Date().toISOString(),
       } as Tx;
     }
-    throw new Error(persistErrorMessage(err));
+    // Online RPC fallback: insert directly into transactions table
+    try {
+      const row = {
+        id: txId,
+        ...txToDb({ ...tx, id: txId }),
+        collector_id: userId,
+      };
+      const { data: directData, error: directErr } = await supabase
+        .from("transactions")
+        .insert(row)
+        .select()
+        .single();
+      if (directErr) throw directErr;
+      return dbToTx(directData);
+    } catch (fallbackErr) {
+      throw new Error(persistErrorMessage(fallbackErr || err));
+    }
   }
 }
 
