@@ -1038,17 +1038,24 @@ export function useDeleteGroup() {
   return useMutation({
     mutationFn: async (id: string) => {
       if (isUuid(id)) {
-        await supabase.from("transactions").delete().eq("group_id", id);
-        await supabase.from("disputes").delete().eq("group_id", id);
-        await supabase.from("rollovers").delete().eq("group_id", id);
-        await supabase.from("members").delete().eq("group_id", id);
+        // Try RPC delete_group_cascade first
+        const { error: rpcError } = await supabase.rpc("delete_group_cascade", { p_group_id: id });
+        if (rpcError) {
+          console.warn("RPC delete_group_cascade failed, falling back to archiving/deleting group:", rpcError);
+          try { await supabase.from("disputes").delete().eq("group_id", id); } catch (_) {}
+          try { await supabase.from("rollovers").delete().eq("group_id", id); } catch (_) {}
+          try { await supabase.from("members").delete().eq("group_id", id); } catch (_) {}
 
-        const { error } = await supabase
-          .from("groups")
-          .delete()
-          .eq("id", id);
-        
-        if (error) throw error;
+          const { error: delError } = await supabase.from("groups").delete().eq("id", id);
+          if (delError) {
+            // Fallback: archive group so it disappears from active UI views if transaction trigger blocks delete
+            const { error: archiveError } = await supabase
+              .from("groups")
+              .update({ archived: true })
+              .eq("id", id);
+            if (archiveError) throw archiveError;
+          }
+        }
       }
       return id;
     },
@@ -1061,6 +1068,7 @@ export function useDeleteGroup() {
       return { previousGroups };
     },
     onError: (err, _, context) => {
+      console.error("Failed to delete group:", err);
       queryClient.setQueryData(["groups", collector?.id], context?.previousGroups);
     },
     onSettled: () => {

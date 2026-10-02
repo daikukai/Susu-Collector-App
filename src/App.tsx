@@ -8,7 +8,7 @@ import MasterAdminPortal from "./components/MasterAdminPortal";
 import SusuLogo from "./components/SusuLogo";
 import ExportLedgerModal, { exportLedgerCsv } from "./components/ExportLedgerModal";
 import ExportMembersModal from "./components/ExportMembersModal";
-import { newUuid } from "./lib/ids";
+import { isUuid, newUuid } from "./lib/ids";
 import {
   useGroups,
   useMembers,
@@ -723,11 +723,16 @@ function CollectTab({ state, setState, initialSub = "Roster", goHome }: {
   const dayRate = todayExpected > 0 ? Math.min(100, Math.round((todayCollected / todayExpected) * 100)) : 100;
 
   const [rosterToast, setRosterToast] = useState<string | null>(null);
+  const [tappingMemberId, setTappingMemberId] = useState<string | null>(null);
 
   const tapRoster = (memberId: string) => {
     if (isCycleEnded) return;
+    if (tappingMemberId === memberId) return;
+    setTappingMemberId(memberId);
+
     if (hasMemberPayout(state, memberId, g.id)) {
       setRosterToast("Member has already been paid out. Contributions locked.");
+      setTappingMemberId(null);
       setTimeout(() => setRosterToast(null), 3000);
       return;
     }
@@ -735,6 +740,7 @@ function CollectTab({ state, setState, initialSub = "Roster", goHome }: {
     const remAmt = Math.max(0, g.amount - alreadyPaidToday);
     if (remAmt <= 0) {
       setRosterToast("Member has already fully paid today's contribution.");
+      setTappingMemberId(null);
       setTimeout(() => setRosterToast(null), 3000);
       return;
     }
@@ -757,6 +763,7 @@ function CollectTab({ state, setState, initialSub = "Roster", goHome }: {
     const sms = mkSms(memberId, "Receipt", content);
     setState({ ...state, transactions: [...state.transactions, newTx], smsLog: [sms, ...state.smsLog] });
     setRosterToast(`Receipt for ${fmt(remAmt, g.currency)} sent to ${m.name} · ${m.phone}`);
+    setTimeout(() => setTappingMemberId(null), 500);
     setTimeout(() => setRosterToast(null), 3000);
   };
 
@@ -877,6 +884,7 @@ function CollectTab({ state, setState, initialSub = "Roster", goHome }: {
               const isPartial = todayPaid > 0 && todayPaid < g.amount;
               const remAmt = Math.max(0, g.amount - todayPaid);
               const paidOut = hasMemberPayout(state, m.id, g.id);
+              const isTapping = tappingMemberId === m.id;
               return (
                 <div key={m.id} className={`flex items-center justify-between p-3.5 ${i < members.length - 1 ? "border-b border-gray-50" : ""}`}>
                   <div>
@@ -900,16 +908,18 @@ function CollectTab({ state, setState, initialSub = "Roster", goHome }: {
                   ) : isPartial ? (
                     <button
                       onClick={() => tapRoster(m.id)}
-                      className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg active:scale-[0.97] transition-all shadow-sm flex items-center gap-1"
+                      disabled={isTapping}
+                      className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg active:scale-[0.97] disabled:opacity-50 transition-all shadow-sm flex items-center gap-1"
                     >
-                      Collect remaining ({fmt(remAmt, g.currency)})
+                      {isTapping ? "Saving..." : `Collect remaining (${fmt(remAmt, g.currency)})`}
                     </button>
                   ) : (
                     <button
                       onClick={() => tapRoster(m.id)}
-                      className="bg-emerald-600 text-white text-xs font-bold px-4 py-1.5 rounded-lg active:bg-emerald-700 active:scale-[0.97] transition-all shadow-sm shadow-emerald-200"
+                      disabled={isTapping}
+                      className="bg-emerald-600 text-white text-xs font-bold px-4 py-1.5 rounded-lg active:bg-emerald-700 active:scale-[0.97] disabled:opacity-50 transition-all shadow-sm shadow-emerald-200"
                     >
-                      Tap to collect
+                      {isTapping ? "Saving..." : "Tap to collect"}
                     </button>
                   )}
                 </div>
@@ -2945,7 +2955,7 @@ export default function App({ collectorName = "Collector" }: AppProps) {
       } else {
         const existsInActive = activeGroups.some((g) => g.id === activeGroupId);
         const existsInAll = state.groups.some((g) => g.id === activeGroupId);
-        if (!existsInActive && !existsInAll) {
+        if (!existsInActive && !existsInAll && !isUuid(activeGroupId)) {
           setActiveGroupId(activeGroups[0].id);
         }
       }

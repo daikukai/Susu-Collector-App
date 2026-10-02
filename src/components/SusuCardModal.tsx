@@ -74,10 +74,10 @@ function calcCyclePeriods(startDateStr?: string, frequency = "Daily", asOfStr?: 
   if (diffDays <= 0) return 0;
   
   if (frequency === "Weekly") {
-    return Math.max(Math.floor((diffDays - 1) / 7) + 1, 1);
+    return Math.max(Math.ceil(diffDays / 7), 1);
   } else if (frequency === "Monthly") {
     const months = (eDate.getFullYear() - sDate.getFullYear()) * 12 + (eDate.getMonth() - sDate.getMonth());
-    return Math.max(months + 1, 1);
+    return Math.max(months + (eDate.getDate() >= sDate.getDate() ? 1 : 0), 1);
   }
   return diffDays;
 }
@@ -100,19 +100,19 @@ export function SusuCardModal({ member, group, collectorName, onClose }: SusuCar
   let cardSlots: { label: string; amount: number }[] = [];
 
   if (isMonthly) {
-    const totalMonths = exactPeriods && exactPeriods > 0 ? exactPeriods : 12;
+    const totalMonths = exactPeriods && exactPeriods > 0 ? exactPeriods : Math.max(1, group.cycles || 12);
     cardSlots = Array.from({ length: totalMonths }, (_, i) => ({
       label: monthNames[i % 12] || `Mth ${i + 1}`,
       amount: group.amount,
     }));
   } else if (isWeekly) {
-    const totalWeeks = exactPeriods && exactPeriods > 0 ? exactPeriods : Math.max(4, (group.cycles || 1) * 4);
+    const totalWeeks = exactPeriods && exactPeriods > 0 ? exactPeriods : Math.max(1, group.cycles || 4);
     cardSlots = Array.from({ length: totalWeeks }, (_, i) => ({
       label: `Wk ${i + 1}`,
       amount: group.amount,
     }));
   } else {
-    const totalDays = exactPeriods && exactPeriods > 0 ? exactPeriods : 31;
+    const totalDays = exactPeriods && exactPeriods > 0 ? exactPeriods : Math.max(1, group.cycles || 30);
     cardSlots = Array.from({ length: totalDays }, (_, i) => ({
       label: `${i + 1}`,
       amount: group.amount,
