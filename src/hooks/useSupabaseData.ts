@@ -753,13 +753,18 @@ export function useCreateTransaction() {
       await queryClient.cancelQueries({ queryKey: ["transactions", collector?.id] });
       const previousTransactions = queryClient.getQueryData(["transactions", collector?.id]) as Tx[];
       
+      const txId = (newTx as Tx).id || `temp-${Date.now()}`;
       const optimisticTx: Tx = {
         ...newTx,
-        id: `temp-${Date.now()}`,
-        timestamp: new Date().toISOString(),
+        id: txId,
+        type: newTx.type || "contribution",
+        timestamp: (newTx as Tx).timestamp || new Date().toISOString(),
       };
       
-      queryClient.setQueryData(["transactions", collector?.id], (old: Tx[] = []) => [optimisticTx, ...old]);
+      queryClient.setQueryData(["transactions", collector?.id], (old: Tx[] = []) => {
+        const filtered = (old || []).filter((t) => t.id !== txId && (!t.displayId || !optimisticTx.displayId || t.displayId !== optimisticTx.displayId));
+        return [optimisticTx, ...filtered];
+      });
       
       return { previousTransactions };
     },
@@ -995,12 +1000,19 @@ export function useDeleteGroup() {
   
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from("groups")
-        .delete()
-        .eq("id", id);
-      
-      if (error) throw error;
+      if (isUuid(id)) {
+        await supabase.from("transactions").delete().eq("group_id", id);
+        await supabase.from("disputes").delete().eq("group_id", id);
+        await supabase.from("rollovers").delete().eq("group_id", id);
+        await supabase.from("members").delete().eq("group_id", id);
+
+        const { error } = await supabase
+          .from("groups")
+          .delete()
+          .eq("id", id);
+        
+        if (error) throw error;
+      }
       return id;
     },
     onMutate: async (id) => {
@@ -1016,6 +1028,8 @@ export function useDeleteGroup() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["groups", collector?.id] });
+      queryClient.invalidateQueries({ queryKey: ["members", collector?.id] });
+      queryClient.invalidateQueries({ queryKey: ["transactions", collector?.id] });
     },
   });
 }
@@ -1078,12 +1092,13 @@ export function useRecordPayment() {
       method?: string;
       note?: string;
       displayId: string;
+      id?: string;
     }) => {
       if (!collector?.id) throw new Error("Not authenticated");
 
       const transaction = await recordLedgerTransaction(collector.id, {
         ...params,
-        id: isUuid((params as { id?: string }).id) ? (params as { id?: string }).id : newUuid(),
+        id: isUuid(params.id) ? params.id! : newUuid(),
         type: "contribution",
         memberId: params.memberId,
         method: params.method || "Cash",
@@ -1098,9 +1113,11 @@ export function useRecordPayment() {
       const previousTransactions = queryClient.getQueryData(["transactions", collector?.id]) as Tx[];
       const previousSmsLog = queryClient.getQueryData(["smsLog", collector?.id]) as SmsEntry[];
       
+      const txId = params.id || `temp-${Date.now()}`;
+
       // Optimistic update
       const optimisticTx: Tx = {
-        id: `temp-${Date.now()}`,
+        id: txId,
         groupId: params.groupId,
         memberId: params.memberId,
         type: "contribution",
@@ -1121,7 +1138,10 @@ export function useRecordPayment() {
         content: `Payment receipt for ${params.amount}`,
       };
       
-      queryClient.setQueryData(["transactions", collector?.id], (old: Tx[] = []) => [optimisticTx, ...(old || [])]);
+      queryClient.setQueryData(["transactions", collector?.id], (old: Tx[] = []) => {
+        const filtered = (old || []).filter((t) => t.id !== txId && (!t.displayId || t.displayId !== params.displayId));
+        return [optimisticTx, ...filtered];
+      });
       queryClient.setQueryData(["smsLog", collector?.id], (old: SmsEntry[] = []) => [optimisticSms, ...(old || [])]);
       
       return { previousTransactions, previousSmsLog };

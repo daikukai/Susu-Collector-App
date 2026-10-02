@@ -2817,6 +2817,7 @@ export default function App({ collectorName = "Collector" }: AppProps) {
         
         if (t.type === "contribution") {
           recordPayment.mutate({
+            id: t.id,
             groupId: t.groupId,
             memberId: t.memberId,
             amount: t.amount,
@@ -2911,15 +2912,20 @@ export default function App({ collectorName = "Collector" }: AppProps) {
   const activeGroups = state.groups.filter((g) => !g.archived);
   const hasActiveGroup = activeGroups.length > 0;
 
-  // Auto-select valid active group if activeGroupId is stale or un-synced
+  // Auto-select valid active group if activeGroupId is empty or points to a deleted group
   useEffect(() => {
     if (activeGroups.length > 0) {
-      const isValid = activeGroups.some((g) => g.id === activeGroupId);
-      if (!isValid) {
+      if (!activeGroupId) {
         setActiveGroupId(activeGroups[0].id);
+      } else {
+        const existsInActive = activeGroups.some((g) => g.id === activeGroupId);
+        const existsInAll = state.groups.some((g) => g.id === activeGroupId);
+        if (!existsInActive && !existsInAll) {
+          setActiveGroupId(activeGroups[0].id);
+        }
       }
     }
-  }, [activeGroups, activeGroupId]);
+  }, [activeGroups, activeGroupId, state.groups]);
 
   const [targetLedgerMemberId, setTargetLedgerMemberId] = useState<string>("all");
 

@@ -49,6 +49,39 @@ function resolveOklchToRgb(colorStr: string): string {
   }
 }
 
+function parseDateLocal(dateStr?: string): Date {
+  if (!dateStr) return new Date();
+  const parts = dateStr.slice(0, 10).split("-");
+  if (parts.length === 3) {
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+      return new Date(y, m, d);
+    }
+  }
+  return new Date(dateStr);
+}
+
+function calcCyclePeriods(startDateStr?: string, frequency = "Daily", asOfStr?: string): number | null {
+  if (!startDateStr || !asOfStr) return null;
+  const sDate = parseDateLocal(startDateStr);
+  const eDate = parseDateLocal(asOfStr);
+  sDate.setHours(0, 0, 0, 0);
+  eDate.setHours(0, 0, 0, 0);
+  
+  const diffDays = Math.max(Math.floor((eDate.getTime() - sDate.getTime()) / 86400000) + 1, 0);
+  if (diffDays <= 0) return 0;
+  
+  if (frequency === "Weekly") {
+    return Math.max(Math.floor((diffDays - 1) / 7) + 1, 1);
+  } else if (frequency === "Monthly") {
+    const months = (eDate.getFullYear() - sDate.getFullYear()) * 12 + (eDate.getMonth() - sDate.getMonth());
+    return Math.max(months + 1, 1);
+  }
+  return diffDays;
+}
+
 export function SusuCardModal({ member, group, collectorName, onClose }: SusuCardModalProps) {
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -60,25 +93,26 @@ export function SusuCardModal({ member, group, collectorName, onClose }: SusuCar
   const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const weekHeader = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
+  // Calculate exact total periods if group has start date & end date
+  const exactPeriods = calcCyclePeriods(group.startDate, group.frequency, group.endDate);
+
   // Generate slots specifically for the group setup
   let cardSlots: { label: string; amount: number }[] = [];
 
   if (isMonthly) {
-    // 12 Months layout (Jan, Feb, Mar, Apr ...)
-    cardSlots = monthNames.map((m) => ({
-      label: m,
+    const totalMonths = exactPeriods && exactPeriods > 0 ? exactPeriods : 12;
+    cardSlots = Array.from({ length: totalMonths }, (_, i) => ({
+      label: monthNames[i % 12] || `Mth ${i + 1}`,
       amount: group.amount,
     }));
   } else if (isWeekly) {
-    // Weekly layout (Wk 1, Wk 2 ... Wk 52 or cycle weeks)
-    const totalWeeks = Math.max(12, Math.min(52, (group.cycles || 1) * 4));
+    const totalWeeks = exactPeriods && exactPeriods > 0 ? exactPeriods : Math.max(4, (group.cycles || 1) * 4);
     cardSlots = Array.from({ length: totalWeeks }, (_, i) => ({
       label: `Wk ${i + 1}`,
       amount: group.amount,
     }));
   } else {
-    // Daily layout (Day 1 through Day 31)
-    const totalDays = 31;
+    const totalDays = exactPeriods && exactPeriods > 0 ? exactPeriods : 31;
     cardSlots = Array.from({ length: totalDays }, (_, i) => ({
       label: `${i + 1}`,
       amount: group.amount,
