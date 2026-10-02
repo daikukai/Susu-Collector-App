@@ -53,7 +53,13 @@ const mkTxId = () => {
   return "SUSU-" + d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0") + "-" + String(Math.floor(Math.random() * 900000) + 100000);
 };
 const fmt = (n: number, currency = "LRD") => currency + " " + Math.round(n).toLocaleString();
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
 const nowISO = () => new Date().toISOString();
 
 function mkMemberCode(name: string, memberCount: number): string {
@@ -2266,8 +2272,6 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
     if (!amt || amt <= 0) errs.amount = "Enter a contribution amount.";
     if (!gStart) {
       errs.startDate = "Select a start date.";
-    } else if (gStart < todayStr()) {
-      errs.startDate = "Start date cannot be in the past.";
     }
     if (!gEnd) {
       errs.endDate = "Select an end date.";

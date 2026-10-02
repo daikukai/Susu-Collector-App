@@ -467,6 +467,20 @@ export function useSmsLog() {
   });
 }
 
+async function ensureCollectorProfile(userId: string, name?: string) {
+  try {
+    const { data } = await supabase.from("collectors").select("id").eq("id", userId).maybeSingle();
+    if (!data) {
+      await supabase.from("collectors").insert({
+        id: userId,
+        name: name || "Susu Collector",
+      });
+    }
+  } catch (e) {
+    console.warn("ensureCollectorProfile warning:", e);
+  }
+}
+
 // Mutation Hooks with optimistic updates
 export function useCreateGroup() {
   const queryClient = useQueryClient();
@@ -475,6 +489,7 @@ export function useCreateGroup() {
   return useMutation({
     mutationFn: async (group: Omit<Group, "id"> & { id?: string }) => {
       const userId = await requireSessionUserId();
+      await ensureCollectorProfile(userId, collector?.name);
       const groupId = isUuid(group.id) ? group.id! : newUuid();
       const row = {
         id: groupId,
@@ -572,6 +587,7 @@ export function useCreateMember() {
   return useMutation({
     mutationFn: async (member: Omit<Member, "id"> & { id?: string }) => {
       const userId = await requireSessionUserId();
+      await ensureCollectorProfile(userId, collector?.name);
       const memberId = isUuid(member.id) ? member.id! : newUuid();
       
       const localMember: Member = {
