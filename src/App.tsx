@@ -8,6 +8,7 @@ import MasterAdminPortal from "./components/MasterAdminPortal";
 import SusuLogo from "./components/SusuLogo";
 import ExportLedgerModal, { exportLedgerCsv } from "./components/ExportLedgerModal";
 import ExportMembersModal from "./components/ExportMembersModal";
+import { newUuid } from "./lib/ids";
 import {
   useGroups,
   useMembers,
@@ -46,8 +47,7 @@ interface AppState {
   rollovers: Rollover[]; disputes: Dispute[]; smsLog: SmsEntry[];
 }
 
-let _uidSeq = 0;
-const uid = (p: string) => p + "-" + Date.now().toString(36) + (++_uidSeq).toString(36);
+const uid = (_prefix?: string) => newUuid();
 const mkTxId = () => {
   const d = new Date();
   return "SUSU-" + d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0") + "-" + String(Math.floor(Math.random() * 900000) + 100000);
@@ -295,14 +295,14 @@ function groupTotals(state: AppState, gid: string) {
     .filter((t) => t.groupId === gid && !sup[t.id] && getRootTxType(t, state.transactions) === "collector_fee")
     .reduce((a, t) => a + t.amount, 0);
 
-  let expected = 0, memberPaid = 0, pastArrears = 0;
+  let expected = 0, memberPaid = 0;
   members.forEach((m) => {
     const s = memberStats(state, m);
     expected += s.expected;
     memberPaid += s.paid;
-    pastArrears += s.pastArrears;
   });
-  const outstanding = Math.max(0, expected - memberPaid);
+  const outstanding = members.reduce((sum, m) => sum + memberStats(state, m).outstanding, 0);
+  const pastArrears = members.reduce((sum, m) => sum + memberStats(state, m).pastArrears, 0);
   
   const contributingMembers = members.filter((m) => {
     return state.transactions.some((t) => t.memberId === m.id && !sup[t.id] && getRootTxType(t, state.transactions) === "contribution");

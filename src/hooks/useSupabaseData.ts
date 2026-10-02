@@ -2,6 +2,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
 import { enqueueSync } from "../lib/db";
+import { isUuid, newUuid } from "../lib/ids";
+import { isOffline, persistErrorMessage, requireSessionUserId } from "../lib/session";
 
 // Get Supabase URL from environment
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -159,6 +161,28 @@ const groupToDb = (g: Group) => ({
   archived: Boolean(g.archived),
 });
 
+const groupUpdatesToDb = (updates: Partial<Group>) => {
+  const row: Record<string, unknown> = {};
+  if (updates.name !== undefined) row.name = updates.name;
+  if (updates.amount !== undefined) row.amount = Number(updates.amount) || 0;
+  if (updates.currency !== undefined) row.currency = updates.currency || "LRD";
+  if (updates.frequency !== undefined) row.frequency = updates.frequency;
+  if (updates.cycles !== undefined) row.cycles = Number(updates.cycles) || 1;
+  if (updates.cycleNumber !== undefined) row.cycle_number = Number(updates.cycleNumber) || 1;
+  if (updates.payoutOrder !== undefined) row.payout_order = updates.payoutOrder;
+  if (updates.startDate !== undefined) row.start_date = updates.startDate?.trim() || new Date().toISOString().slice(0, 10);
+  if (updates.endDate !== undefined) {
+    row.end_date = typeof updates.endDate === "string" && updates.endDate.trim() ? updates.endDate.trim() : null;
+  }
+  if (updates.feeType !== undefined) row.fee_type = updates.feeType || "none";
+  if (updates.feeValue !== undefined) row.fee_value = Number(updates.feeValue) || 0;
+  if (updates.virtualDate !== undefined) {
+    row.virtual_date = typeof updates.virtualDate === "string" && updates.virtualDate.trim() ? updates.virtualDate.trim() : null;
+  }
+  if (updates.archived !== undefined) row.archived = Boolean(updates.archived);
+  return row;
+};
+
 const memberToDb = (m: Member) => ({
   group_id: m.groupId,
   name: m.name,
@@ -170,9 +194,12 @@ const memberToDb = (m: Member) => ({
 
 const txToDb = (t: Omit<Tx, "id" | "timestamp"> | Tx) => {
   const displayId = t.displayId || null;
+  const txId = (t as any).id;
   const idempotencyKey = displayId
     ? `tx-disp-${displayId}`
-    : `tx-${t.groupId}-${t.memberId}-${t.date}-${t.amount}-${t.type}-${(t as any).id || Date.now()}`;
+    : txId && isUuid(txId)
+    ? `tx-id-${txId}`
+    : `tx-${t.groupId}-${t.memberId}-${t.date}-${t.amount}-${t.type}`;
 
   return {
     group_id: t.groupId,
@@ -210,83 +237,79 @@ const smsEntryToDb = (s: Omit<SmsEntry, "id" | "timestamp"> | SmsEntry) => ({
   content: s.content,
 });
 
-function ledgerReference(prefix: string, existing?: string): string {
-  if (existing && existing.trim()) return existing.trim();
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return `${prefix}-${crypto.randomUUID()}`;
-  }
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+function extractRpcTransaction(rpcRes: unknown): Tx | null {
+  if (!rpcRes || typeof rpcRes !== "object") return null;
+  const payload = rpcRes as { transaction?: unknown; id?: unknown; group_id?: unknown; groupId?: unknown };
+  const row = payload.transaction && typeof payload.transaction === "object" ? payload.transaction : rpcRes;
+  if (!row || typeof row !== "object") return null;
+  const record = row as { id?: string; group_id?: string; groupId?: string };
+  if (!record.id || !(record.group_id || record.groupId)) return null;
+  return dbToTx(row);
 }
 
 async function recordLedgerTransaction(
   collectorId: string,
   tx: Omit<Tx, "id" | "timestamp"> | Tx
 ) {
-  const isCorrection = tx.type === "correction" && tx.supersedes;
-
-  if (isCorrection) {
-    try {
-      const { data: rpcRes, error: rpcErr } = await supabase.rpc("record_correction_transaction", {
-        payload: {
-          groupId: tx.groupId,
-          memberId: tx.memberId === "collector" ? null : tx.memberId,
-          amount: tx.amount,
-          date: tx.date,
-          method: tx.method || "Cash",
-          note: tx.note || "Correction",
-          supersedes: tx.supersedes,
-          originalAmount: tx.originalAmount || tx.amount,
-          collectorId,
-        },
-      });
-
-      if (!rpcErr && (rpcRes?.transaction || rpcRes?.success)) {
-        const txObj = rpcRes.transaction || rpcRes;
-        return dbToTx(txObj);
-      }
-    } catch (err) {
-      console.warn("record_correction_transaction notice:", err);
-    }
-  } else {
-    try {
-      const { data: rpcRes, error: rpcErr } = await supabase.rpc("record_payment_transaction", {
-        payload: {
-          groupId: tx.groupId,
-          memberId: tx.memberId === "collector" ? null : tx.memberId,
-          type: tx.type || "contribution",
-          amount: tx.amount,
-          date: tx.date,
-          method: tx.method || "Cash",
-          note: tx.note || (tx.type === "payout" ? "Member payout" : tx.type === "collector_fee" ? "Collector fee" : "Rapid roster"),
-          displayId: tx.displayId || `TX-${Date.now()}`,
-          collectorId,
-        },
-      });
-
-      if (!rpcErr && (rpcRes?.transaction || rpcRes?.success)) {
-        const txObj = rpcRes.transaction || rpcRes;
-        return dbToTx(txObj);
-      }
-    } catch (err) {
-      console.warn("record_payment_transaction notice:", err);
-    }
+  const userId = await requireSessionUserId();
+  if (collectorId && collectorId !== userId) {
+    throw new Error("Signed-in account does not match this collector. Sign in again.");
   }
 
-  // Resilient fallback for local demo IDs and offline IndexedDB
-  const fallbackTx: Tx = {
-    ...tx,
-    id: (tx as Tx).id || `tx-loc-${Date.now()}`,
+  if (!isUuid(tx.groupId)) {
+    throw new Error("This group is not saved on the server yet. Create the group again, then record money.");
+  }
+
+  const memberId = tx.memberId === "collector" || !tx.memberId ? null : tx.memberId;
+  if (tx.type !== "collector_fee" && memberId && !isUuid(memberId)) {
+    throw new Error("This member is not saved on the server yet. Add the member again, then collect.");
+  }
+  if (tx.type !== "collector_fee" && !memberId) {
+    throw new Error("A member is required to record this transaction.");
+  }
+
+  const txId = isUuid((tx as Tx).id) ? (tx as Tx).id : newUuid();
+  const payload = {
+    id: txId,
+    groupId: tx.groupId,
+    memberId,
     type: tx.type || "contribution",
-    timestamp: new Date().toISOString(),
+    amount: tx.amount,
+    date: tx.date,
+    method: tx.method || "Cash",
+    note: tx.note || (tx.type === "payout" ? "Member payout" : tx.type === "collector_fee" ? "Collector fee" : "Rapid roster"),
+    displayId: tx.displayId || `TX-${txId}`,
+    supersedes: tx.supersedes,
+    originalAmount: tx.originalAmount || tx.amount,
+    collectorId: userId,
+  };
+
+  const invokeRpc = async () => {
+    const isCorrection = tx.type === "correction" && tx.supersedes;
+    const { data: rpcRes, error: rpcErr } = isCorrection
+      ? await supabase.rpc("record_correction_transaction", { payload })
+      : await supabase.rpc("record_payment_transaction", { payload });
+
+    if (rpcErr) throw new Error(rpcErr.message || "Server could not save this transaction.");
+    const saved = extractRpcTransaction(rpcRes);
+    if (!saved) throw new Error("Server did not return a saved transaction.");
+    return saved;
   };
 
   try {
-    await enqueueSync("CREATE", "transactions", tx);
-  } catch {
-    // Queue fallback notice
+    return await invokeRpc();
+  } catch (err) {
+    if (isOffline()) {
+      await enqueueSync("CREATE", "transactions", { ...tx, id: txId, collectorId: userId });
+      return {
+        ...tx,
+        id: txId,
+        type: tx.type || "contribution",
+        timestamp: new Date().toISOString(),
+      } as Tx;
+    }
+    throw new Error(persistErrorMessage(err));
   }
-
-  return fallbackTx;
 }
 
 // Query Hooks
@@ -451,19 +474,26 @@ export function useCreateGroup() {
   
   return useMutation({
     mutationFn: async (group: Omit<Group, "id"> & { id?: string }) => {
-      if (!collector?.id) throw new Error("Not authenticated");
-      
-      const { data, error } = await supabase
-        .from("groups")
-        .insert({
-          ...groupToDb(group as Group),
-          collector_id: collector.id,
-        })
-        .select()
-        .single();
-      
-      if (error) throw error;
-      return { created: dbToGroup(data), tempId: group.id };
+      const userId = await requireSessionUserId();
+      const groupId = isUuid(group.id) ? group.id! : newUuid();
+      const row = {
+        id: groupId,
+        ...groupToDb({ ...(group as Group), id: groupId }),
+        collector_id: userId,
+      };
+
+      try {
+        const { data, error } = await supabase.from("groups").insert(row).select().single();
+        if (error) throw error;
+        return { created: dbToGroup(data), tempId: group.id };
+      } catch (err) {
+        if (isOffline()) {
+          const created = { ...(group as Group), id: groupId };
+          await enqueueSync("CREATE", "groups", { ...created, collectorId: userId });
+          return { created, tempId: group.id };
+        }
+        throw new Error(persistErrorMessage(err));
+      }
     },
     onMutate: async (newGroup) => {
       await queryClient.cancelQueries({ queryKey: ["groups", collector?.id] });
@@ -471,16 +501,26 @@ export function useCreateGroup() {
       
       const optimisticGroup: Group = {
         ...newGroup as Group,
-        id: (newGroup as Group).id || `temp-${Date.now()}`,
+        id: (newGroup as Group).id || newUuid(),
       };
       
-      queryClient.setQueryData(["groups", collector?.id], (old: Group[] = []) => [...(old || []), optimisticGroup]);
+      queryClient.setQueryData(["groups", collector?.id], (old: Group[] = []) => {
+        if (old.some((g) => g.id === optimisticGroup.id)) return old;
+        return [...(old || []), optimisticGroup];
+      });
       
       return { previousGroups };
     },
     onError: (err, _, context) => {
       console.error("useCreateGroup error:", err);
       queryClient.setQueryData(["groups", collector?.id], context?.previousGroups);
+    },
+    onSuccess: (result) => {
+      if (!result?.created) return;
+      queryClient.setQueryData(["groups", collector?.id], (old: Group[] = []) => {
+        const withoutDup = old.filter((g) => g.id !== result.created.id && g.id !== result.tempId);
+        return [result.created, ...withoutDup];
+      });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["groups", collector?.id] });
@@ -494,9 +534,11 @@ export function useUpdateGroup() {
   
   return useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: Partial<Group> }) => {
+      await requireSessionUserId();
+      if (!isUuid(id)) throw new Error("This group is not saved on the server yet.");
       const { data, error } = await supabase
         .from("groups")
-        .update(groupToDb(updates as Group))
+        .update(groupUpdatesToDb(updates))
         .eq("id", id)
         .select()
         .single();
@@ -529,8 +571,8 @@ export function useCreateMember() {
   
   return useMutation({
     mutationFn: async (member: Omit<Member, "id"> & { id?: string }) => {
-      const isUuid = (str?: string) => !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-      const memberId = member.id || `m-${Date.now()}`;
+      const userId = await requireSessionUserId();
+      const memberId = isUuid(member.id) ? member.id! : newUuid();
       
       const localMember: Member = {
         id: memberId,
@@ -542,18 +584,16 @@ export function useCreateMember() {
         payoutPosition: member.payoutPosition,
       };
 
-      if (!collector?.id || !isUuid(member.groupId)) {
-        return { member: localMember, insertedToDb: false };
+      if (!isUuid(member.groupId)) {
+        throw new Error("Save the group first, then add members.");
       }
-      
+
       try {
-        const fullPayload: any = {
-          ...memberToDb(member as Member),
-          collector_id: collector.id,
+        const fullPayload: Record<string, unknown> = {
+          id: memberId,
+          ...memberToDb({ ...localMember }),
+          collector_id: userId,
         };
-        if (!isUuid(member.id)) {
-          delete fullPayload.id;
-        }
         
         let { data, error } = await supabase
           .from("members")
@@ -561,61 +601,65 @@ export function useCreateMember() {
           .select()
           .single();
         
-        // If error is due to missing schema columns (address or member_code), retry inserting core columns
         if (error && (error.message?.includes("column") || error.code === "PGRST204" || error.message?.includes("address") || error.message?.includes("member_code"))) {
-          console.warn("Supabase schema missing new columns, attempting core columns insert:", error.message);
-          const fallbackPayload = {
-            group_id: member.groupId,
-            name: member.name,
-            phone: member.phone,
-            payout_position: member.payoutPosition,
-            collector_id: collector.id,
-          };
           const retryRes = await supabase
             .from("members")
-            .insert(fallbackPayload)
+            .insert({
+              id: memberId,
+              group_id: member.groupId,
+              name: member.name,
+              phone: member.phone,
+              payout_position: member.payoutPosition,
+              collector_id: userId,
+            })
             .select()
             .single();
           
-          if (!retryRes.error && retryRes.data) {
-            const dbM = dbToMember(retryRes.data);
-            return {
-              member: { ...dbM, address: member.address || "", memberCode: member.memberCode || "" },
-              insertedToDb: true,
-            };
+          if (retryRes.error || !retryRes.data) {
+            throw retryRes.error || new Error("Could not save this member.");
           }
+          const dbM = dbToMember(retryRes.data);
+          return {
+            member: { ...dbM, address: member.address || "", memberCode: member.memberCode || "" },
+            insertedToDb: true,
+          };
         }
 
         if (error || !data) {
-          console.warn("Supabase member insert warning, retaining local member:", error);
-          return { member: localMember, insertedToDb: false };
+          throw error || new Error("Could not save this member.");
         }
 
         return { member: dbToMember(data), insertedToDb: true };
       } catch (err) {
-        console.warn("Supabase insert exception, retaining local member:", err);
-        return { member: localMember, insertedToDb: false };
+        if (isOffline()) {
+          await enqueueSync("CREATE", "members", { ...localMember, collectorId: userId });
+          return { member: localMember, insertedToDb: false };
+        }
+        throw new Error(persistErrorMessage(err));
       }
     },
     onMutate: async (newMember) => {
       await queryClient.cancelQueries({ queryKey: ["members", collector?.id] });
       const previousMembers = (queryClient.getQueryData(["members", collector?.id]) as Member[]) || [];
       
-      const memberId = (newMember as Member).id || `m-${Date.now()}`;
+      const memberId = isUuid((newMember as Member).id) ? (newMember as Member).id : newUuid();
       const optimisticMember: Member = {
         ...(newMember as Member),
         id: memberId,
       };
       
       queryClient.setQueryData(["members", collector?.id], (old: Member[] = []) => {
-        const filtered = old.filter((m) => m.id !== memberId && !m.id.startsWith("temp-"));
+        const filtered = old.filter((m) => m.id !== memberId);
         return [...filtered, optimisticMember];
       });
       
       return { previousMembers, memberId };
     },
-    onError: (err) => {
-      console.warn("useCreateMember onError caught (retaining local state):", err);
+    onError: (err, _, context) => {
+      console.warn("useCreateMember onError caught:", err);
+      if (context?.previousMembers) {
+        queryClient.setQueryData(["members", collector?.id], context.previousMembers);
+      }
     },
     onSuccess: (res, newMember) => {
       const savedMember = res.member;
@@ -642,28 +686,33 @@ export function useUpdateMember() {
   
   return useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: Partial<Member> }) => {
-      const isUuid = (str?: string) => !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+      const userId = await requireSessionUserId();
       
-      if (!collector?.id || !isUuid(id)) {
-        return { id, ...updates } as Member;
+      if (!isUuid(id)) {
+        throw new Error("This member is not saved on the server yet.");
       }
       
       try {
+        const row: Record<string, unknown> = {};
+        if (updates.groupId !== undefined) row.group_id = updates.groupId;
+        if (updates.name !== undefined) row.name = updates.name;
+        if (updates.phone !== undefined) row.phone = updates.phone;
+        if (updates.address !== undefined) row.address = updates.address || "";
+        if (updates.memberCode !== undefined) row.member_code = updates.memberCode || "";
+        if (updates.payoutPosition !== undefined) row.payout_position = updates.payoutPosition;
+
         const { data, error } = await supabase
           .from("members")
-          .update(memberToDb(updates as Member))
+          .update(row)
           .eq("id", id)
+          .eq("collector_id", userId)
           .select()
           .single();
         
-        if (error) {
-          console.warn("Supabase updateMember warning:", error);
-          return { id, ...updates } as Member;
-        }
+        if (error) throw error;
         return dbToMember(data);
       } catch (err) {
-        console.warn("Supabase updateMember error:", err);
-        return { id, ...updates } as Member;
+        throw new Error(persistErrorMessage(err));
       }
     },
     onMutate: async ({ id, updates }) => {
@@ -676,8 +725,11 @@ export function useUpdateMember() {
       
       return { previousMembers };
     },
-    onError: (err) => {
+    onError: (err, _, context) => {
       console.warn("useUpdateMember onError caught:", err);
+      if (context?.previousMembers) {
+        queryClient.setQueryData(["members", collector?.id], context.previousMembers);
+      }
     },
     onSettled: (data, error) => {
       if (collector?.id && !error) {
@@ -818,14 +870,19 @@ export function useCreateDispute() {
   const { collector } = useAuth();
   
   return useMutation({
-    mutationFn: async (dispute: Omit<Dispute, "id">) => {
-      if (!collector?.id) throw new Error("Not authenticated");
+    mutationFn: async (dispute: Omit<Dispute, "id"> & { id?: string }) => {
+      const userId = await requireSessionUserId();
+      if (!isUuid(dispute.groupId) || !isUuid(dispute.memberId)) {
+        throw new Error("Save the group and member first, then log a dispute.");
+      }
+      const disputeId = isUuid(dispute.id) ? dispute.id! : newUuid();
       
       const { data, error } = await supabase
         .from("disputes")
         .insert({
-          ...disputeToDb(dispute),
-          collector_id: collector.id,
+          id: disputeId,
+          ...disputeToDb({ ...dispute, id: disputeId } as Dispute),
+          collector_id: userId,
         })
         .select()
         .single();
@@ -839,7 +896,7 @@ export function useCreateDispute() {
       
       const optimisticDispute: Dispute = {
         ...newDispute,
-        id: `temp-${Date.now()}`,
+        id: (newDispute as Dispute).id || newUuid(),
       };
       
       queryClient.setQueryData(["disputes", collector?.id], (old: Dispute[] = []) => [...old, optimisticDispute]);
@@ -1026,6 +1083,7 @@ export function useRecordPayment() {
 
       const transaction = await recordLedgerTransaction(collector.id, {
         ...params,
+        id: isUuid((params as { id?: string }).id) ? (params as { id?: string }).id : newUuid(),
         type: "contribution",
         memberId: params.memberId,
         method: params.method || "Cash",
