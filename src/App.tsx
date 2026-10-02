@@ -205,6 +205,22 @@ function mkSms(memberId: string, kind: string, content: string): SmsEntry {
 
 
 // ── Domain helpers ─────────────────────────────────────────────────────────────
+function deduplicateTransactions(txs: Tx[]): Tx[] {
+  const seenIds = new Set<string>();
+  const seenDisplayIds = new Set<string>();
+  const result: Tx[] = [];
+
+  for (const t of txs) {
+    if (seenIds.has(t.id)) continue;
+    if (t.displayId && seenDisplayIds.has(t.displayId)) continue;
+
+    seenIds.add(t.id);
+    if (t.displayId) seenDisplayIds.add(t.displayId);
+    result.push(t);
+  }
+  return result;
+}
+
 function supersededMap(txs: Tx[]): Record<string, boolean> {
   const m: Record<string, boolean> = {};
   txs.forEach((t) => { if (t.supersedes) m[t.supersedes] = true; });
@@ -2701,7 +2717,7 @@ export default function App({ collectorName = "Collector" }: AppProps) {
     activeGroupId,
     groups,
     members,
-    transactions,
+    transactions: deduplicateTransactions(transactions),
     rollovers,
     disputes,
     smsLog,

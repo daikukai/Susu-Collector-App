@@ -395,7 +395,12 @@ export function useTransactions() {
       if (error) return currentCache;
       const dbTxs = (data || []).map(dbToTx);
       const dbIds = new Set(dbTxs.map((t) => t.id));
-      const localOnly = currentCache.filter((t) => !dbIds.has(t.id));
+      const dbDisplayIds = new Set(dbTxs.map((t) => t.displayId).filter(Boolean));
+      
+      const localOnly = currentCache.filter(
+        (t) => !dbIds.has(t.id) && (!t.displayId || !dbDisplayIds.has(t.displayId))
+      );
+      
       return [...dbTxs, ...localOnly];
     },
     enabled: true,
