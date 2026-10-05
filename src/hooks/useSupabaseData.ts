@@ -20,7 +20,7 @@ export interface Group {
   payoutOrder: string;
   startDate: string;
   endDate?: string;
-  feeType: "none" | "percentage";
+  feeType: "none" | "percentage" | "1_unit" | "fixed";
   feeValue: number;
   virtualDate?: string;
   archived?: boolean;
@@ -89,7 +89,7 @@ const dbToGroup = (g: any): Group => ({
   payoutOrder: g.payout_order,
   startDate: g.start_date,
   endDate: g.end_date,
-  feeType: g.fee_type,
+  feeType: g.fee_type || "none",
   feeValue: Number(g.fee_value),
   virtualDate: g.virtual_date,
   archived: g.archived,
@@ -105,20 +105,31 @@ const dbToMember = (m: any): Member => ({
   payoutPosition: m.payout_position,
 });
 
-const dbToTx = (t: any): Tx => ({
-  id: t.id,
-  groupId: t.group_id,
-  memberId: t.member_id || "collector",
-  type: t.type,
-  amount: Number(t.amount),
-  date: t.date,
-  timestamp: t.timestamp,
-  method: t.method,
-  note: t.note,
-  supersedes: t.supersedes,
-  originalAmount: t.original_amount ? Number(t.original_amount) : undefined,
-  displayId: t.display_id,
-});
+const dbToTx = (t: any): Tx => {
+  let type = t.type;
+  if ((!type || type === "contribution") && typeof t.note === "string") {
+    const noteLower = t.note.toLowerCase();
+    if (noteLower.includes("member payout") || noteLower.includes("payout")) {
+      type = "payout";
+    } else if (noteLower.includes("collector fee")) {
+      type = "collector_fee";
+    }
+  }
+  return {
+    id: t.id,
+    groupId: t.group_id,
+    memberId: t.member_id || "collector",
+    type: type || "contribution",
+    amount: Number(t.amount),
+    date: t.date,
+    timestamp: t.timestamp,
+    method: t.method,
+    note: t.note,
+    supersedes: t.supersedes,
+    originalAmount: t.original_amount ? Number(t.original_amount) : undefined,
+    displayId: t.display_id,
+  };
+};
 
 const dbToDispute = (d: any): Dispute => ({
   id: d.id,

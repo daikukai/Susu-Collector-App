@@ -622,12 +622,16 @@ function TodayTab({ state, setState, goCollect, goFinance }: {
       <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Today's workflow</p>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {/* Collector earnings — static calculation from fee % */}
-        {g.feeType === "percentage" && g.feeValue > 0 && (
+        {/* Collector earnings — 1_unit or percentage */}
+        {g.feeType !== "none" && t.plannedCommission > 0 && (
           <Card className="p-4 flex items-center justify-between border border-emerald-100">
             <div>
               <p className="text-xs text-gray-400">Your collector's earnings</p>
-              <p className="text-xs text-gray-500 mt-0.5">{g.feeValue}% of recorded contributions</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {g.feeType === "percentage"
+                  ? `${g.feeValue}% of recorded contributions`
+                  : `1 contribution unit (${fmt(g.amount, g.currency)}) per member`}
+              </p>
             </div>
             <p className="text-xl font-bold text-emerald-600">{fmt(t.plannedCommission, g.currency)}</p>
           </Card>
@@ -2196,7 +2200,7 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
   const [gFreq, setGFreq] = useState("Daily");
   const [gStart, setGStart] = useState(todayStr());
   const [gEnd, setGEnd] = useState("");
-  const [feePercent, setFeePercent] = useState<number | null>(10);
+  const [feeTypeChoice, setFeeTypeChoice] = useState<string>("1_unit");
   const [gErrors, setGErrors] = useState<Record<string, string>>({});
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
@@ -2208,7 +2212,7 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
   const [editFreq, setEditFreq] = useState("Daily");
   const [editStart, setEditStart] = useState("");
   const [editEnd, setEditEnd] = useState("");
-  const [editFee, setEditFee] = useState(0);
+  const [editFeeTypeChoice, setEditFeeTypeChoice] = useState<string>("1_unit");
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
 
   // Deleting group modal state
@@ -2228,7 +2232,7 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
     setEditFreq(gr.frequency || "Daily");
     setEditStart(gr.startDate || todayStr());
     setEditEnd(gr.endDate || "");
-    setEditFee(gr.feeType === "percentage" ? (gr.feeValue || 0) : 0);
+    setEditFeeTypeChoice(gr.feeType || "1_unit");
     setEditErrors({});
   };
 
@@ -2263,8 +2267,8 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
       frequency: editFreq,
       startDate: editStart,
       endDate: editEnd,
-      feeType: editFee > 0 ? "percentage" : "none",
-      feeValue: editFee,
+      feeType: (editFeeTypeChoice as any) || "1_unit",
+      feeValue: editFeeTypeChoice === "none" ? 0 : 1,
     };
 
     setState({
@@ -2309,16 +2313,16 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
     } else if (gEnd <= gStart) {
       errs.endDate = "End date must be after the start date.";
     }
-    if (feePercent === null || feePercent === undefined || isNaN(feePercent)) {
+    if (!feeTypeChoice) {
       errs.fee = "Select a collector's fee structure.";
     }
     if (Object.keys(errs).length) { setGErrors(errs); return; }
-    const actualFee = feePercent ?? 0;
     const ng: Group = {
       id: uid("g"), name: gName.trim(), amount: amt, currency: gCur,
       frequency: gFreq, cycles: 1, cycleNumber: 1, payoutOrder: "Fixed rotation",
       startDate: gStart || todayStr(), endDate: gEnd || undefined,
-      feeType: actualFee > 0 ? "percentage" : "none", feeValue: actualFee,
+      feeType: (feeTypeChoice as any) || "1_unit",
+      feeValue: feeTypeChoice === "none" ? 0 : 1,
     };
     setState({ ...state, groups: [...state.groups, ng], activeGroupId: ng.id });
     goMembers();
@@ -2481,13 +2485,13 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
 
             <div className="mb-4">
               <FieldWrap label="Collector's fee" error={editErrors.fee} required>
-                <Sel value={editFee > 0 ? "10" : "0"} onChange={(v) => { setEditFee(Number(v)); setEditErrors({ ...editErrors, fee: "" }); }} disabled={isEditingGroupStarted} required>
-                  <option value="10">1 Contribution per member (Standard fee)</option>
-                  <option value="0">No fee (0)</option>
+                <Sel value={editFeeTypeChoice} onChange={(v) => { setEditFeeTypeChoice(v); setEditErrors({ ...editErrors, fee: "" }); }} disabled={isEditingGroupStarted} required>
+                  <option value="1_unit">1 Contribution per member (Standard Liberian Susu fee)</option>
+                  <option value="none">No fee (0)</option>
                 </Sel>
               </FieldWrap>
-              {editFee > 0 && editAmt && (
-                <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg p-2 mt-1.5 border border-emerald-100">
+              {editFeeTypeChoice === "1_unit" && editAmt && (
+                <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg p-2 mt-1.5 border border-emerald-100 font-medium">
                   Collector earns 1 contribution unit ({editCur} {editAmt}) from each member for the cycle.
                 </p>
               )}
@@ -2572,20 +2576,19 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
         <div className="mb-3 space-y-1">
           <FieldWrap label="Collector's fee" error={gErrors.fee} required>
             <Sel
-              value={feePercent === null ? "" : String(feePercent)}
+              value={feeTypeChoice}
               onChange={(v) => {
-                setFeePercent(v === "" ? null : Number(v));
+                setFeeTypeChoice(v);
                 setGErrors({ ...gErrors, fee: "" });
               }}
               required
             >
-              {feePercent === null && <option value="" disabled>-- Select Collector Fee --</option>}
-              <option value="10">1 Contribution per member (Standard fee)</option>
-              <option value="0">No fee (0)</option>
+              <option value="1_unit">1 Contribution per member (Standard Liberian Susu fee)</option>
+              <option value="none">No fee (0)</option>
             </Sel>
           </FieldWrap>
-          {feePercent !== null && feePercent > 0 && gAmt && (
-            <p className="text-xs text-emerald-600 mt-1.5 bg-emerald-50 rounded-lg px-2.5 py-1.5 border border-emerald-100">
+          {feeTypeChoice === "1_unit" && gAmt && (
+            <p className="text-xs text-emerald-600 mt-1.5 bg-emerald-50 rounded-lg px-2.5 py-1.5 border border-emerald-100 font-medium">
               Collector earns 1 contribution unit ({gCur} {gAmt}) from each member for the cycle.
             </p>
           )}
@@ -3046,7 +3049,7 @@ export default function App({ collectorName = "Collector" }: AppProps) {
         </button>
       </header>
 
-      <main className="flex-1 overflow-y-auto px-4 py-4 pb-24 md:pl-48 md:pb-4 lg:px-8 lg:pl-56 lg:py-6">
+      <main className="flex-1 overflow-y-auto px-4 py-4 pb-32 md:pl-48 md:pb-4 lg:px-8 lg:pl-56 lg:py-6">
         {renderTab()}
       </main>
 
