@@ -1,4 +1,4 @@
-const CACHE_NAME = "susu-collector-v3";
+const CACHE_NAME = "susu-collector-v4";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
