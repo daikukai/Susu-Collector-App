@@ -147,8 +147,9 @@ function parseDateLocal(dateStr?: string): Date {
 }
 
 function periodsElapsed(startDateStr: string, frequency = "Daily", asOfStr?: string): number {
+  if (!startDateStr || !asOfStr) return 1;
   const sDate = parseDateLocal(startDateStr);
-  const eDate = asOfStr ? parseDateLocal(asOfStr) : new Date();
+  const eDate = parseDateLocal(asOfStr);
   sDate.setHours(0, 0, 0, 0);
   eDate.setHours(0, 0, 0, 0);
   
@@ -262,7 +263,7 @@ function allMembersPaidOut(state: AppState, groupId: string): boolean {
 }
 
 function isArrearsTx(t: Tx): boolean {
-  return !!t.isArrears || (typeof t.note === "string" && t.note.toLowerCase().includes("arrears"));
+  return t.isArrears === true || (typeof t.note === "string" && t.note === "Arrears payment (past cycle)");
 }
 
 function memberStats(state: AppState, m: Member) {
@@ -270,7 +271,7 @@ function memberStats(state: AppState, m: Member) {
   if (!g) {
     return { expected: 0, paid: 0, outstanding: 0, pastArrears: 0, status: "Not due", elapsed: 0, carried: 0, pastElapsed: 0, pastExpected: 0 };
   }
-  const rawElapsed = periodsElapsed(g.startDate, g.frequency, g.virtualDate);
+  const rawElapsed = g.virtualDate ? periodsElapsed(g.startDate, g.frequency, g.virtualDate) : 1;
   const cp = totalCyclePeriods(g);
   // Cap elapsed to total cycle periods if endDate is defined
   const elapsed = cp !== null ? Math.min(rawElapsed, cp) : rawElapsed;
@@ -292,7 +293,9 @@ function memberStats(state: AppState, m: Member) {
     .reduce((a, t) => a + t.amount, 0);
 
   const outstanding = Math.max(0, expected - paid);
-  const pastArrears = Math.max(0, pastExpected - paid);
+  // Arrears only exists if there are unpaid balances from past completed periods or carried rollovers.
+  // If a member has paid in full for all active and past periods (outstanding <= 0), arrears is strictly 0.
+  const pastArrears = outstanding <= 0 ? 0 : Math.min(outstanding, Math.max(0, pastExpected - paid));
 
   const status = paid >= expected && expected > 0 ? "Paid" : paid > 0 ? "Partial" : elapsed > 0 ? "Unpaid" : "Not due";
   return { expected, paid, outstanding, pastArrears, status, elapsed, carried, pastElapsed, pastExpected };
@@ -797,11 +800,11 @@ function CollectTab({ state, setState, initialSub = "Roster", goHome }: {
     setPayErr("");
     const recId = mkTxId();
     const ts = nowISO();
-    const isArrears = payNote.toLowerCase().includes("arrears");
+    const isArrears = false;
     const newTx: Tx = { id: uid("t"), groupId: g.id, memberId: payMember, type: "contribution", amount: amt, date: rosterDate, timestamp: ts, method: payMethod, note: payNote || "Record Payment", isArrears, displayId: recId };
     const m = members.find((x) => x.id === payMember)!;
-    const content = buildSmsContent(isArrears ? "Arrears receipt" : "Receipt", m, amt, g);
-    const sms = mkSms(payMember, isArrears ? "Arrears receipt" : "Receipt", content);
+    const content = buildSmsContent("Receipt", m, amt, g);
+    const sms = mkSms(payMember, "Receipt", content);
     setState({ ...state, transactions: [...state.transactions, newTx], smsLog: [sms, ...state.smsLog] });
     setPayConfirm(`Saved · ${recId} · SMS sent to ${m?.phone}`);
     setPayAmt(String(g.amount)); setPayNote("");
@@ -1001,7 +1004,7 @@ function CollectTab({ state, setState, initialSub = "Roster", goHome }: {
               </div>
             </FieldWrap>
             <FieldWrap label="Note" optional>
-              <Inp value={payNote} onChange={setPayNote} placeholder="e.g. Partial arrears payment" disabled={isCycleEnded} />
+              <Inp value={payNote} onChange={setPayNote} placeholder="e.g. Daily contribution, cash, momo" disabled={isCycleEnded} />
             </FieldWrap>
             <PrimaryBtn onClick={recordPayment} disabled={isCycleEnded} className="mt-1">{isCycleEnded ? "Roster Closed" : "Save & send SMS"}</PrimaryBtn>
             {payConfirm && <Toast msg={payConfirm} />}
@@ -1605,7 +1608,7 @@ function FinanceTab({
                     <div className="flex items-center justify-between gap-2">
                       <div>
                         <p className="text-sm font-semibold text-gray-800">{x.m.name}</p>
-                        <p className="text-xs text-red-600 font-medium mt-0.5">{fmt(x.s.pastArrears, g.currency)} arrears ({x.s.pastElapsed} past cycle{x.s.pastElapsed > 1 ? "s" : ""})</p>
+                        <p className="text-xs text-red-600 font-medium mt-0.5">{fmt(x.s.pastArrears, g.currency)} arrears ({x.s.pastElapsed} missed {g.frequency === "Weekly" ? "week" : g.frequency === "Monthly" ? "month" : "day"}{x.s.pastElapsed > 1 ? "s" : ""})</p>
                       </div>
                       <button
                         onClick={() => payArrearsFull(x.m.id, x.s.pastArrears)}
