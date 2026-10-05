@@ -61,7 +61,7 @@ serve(async (req) => {
 
       const formData = new URLSearchParams()
       formData.append('username', username)
-      formData.append('to', to)
+      formData.append('to', formattedTo)
       formData.append('message', message)
       if (fromSender) {
         formData.append('from', fromSender)

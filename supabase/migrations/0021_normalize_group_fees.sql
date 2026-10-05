@@ -1,10 +1,7 @@
 -- 0021_normalize_group_fees.sql
 -- Fix audit_log constraint and log_audit_event trigger, normalize group fees to 1_unit, and ensure close_cycle_transaction works
 
--- 1. Ensure actor_id is nullable in audit_log to prevent null violations when run from SQL Editor, Edge Functions, or background tasks
-alter table public.audit_log alter column actor_id drop not null;
-
--- 2. Make log_audit_event safe and fault-tolerant
+-- 1. Replace log_audit_event trigger function FIRST with exception handler and coalesce to prevent null constraint violations
 create or replace function public.log_audit_event()
 returns trigger
 language plpgsql
@@ -29,6 +26,9 @@ exception when others then
   return new;
 end;
 $$;
+
+-- 2. Drop the NOT NULL constraint on audit_log.actor_id so SQL Editor & background updates never fail
+alter table public.audit_log alter column actor_id drop not null;
 
 -- 3. Normalize groups fee type check and update existing rows to standard 1_unit
 alter table public.groups drop constraint if exists groups_fee_type_check;

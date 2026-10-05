@@ -29,7 +29,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setCollector(collectorData);
     } catch (error) {
-      console.error("Error loading collector:", error);
       setCollector({ id: userId, name: "Collector", created_at: new Date().toISOString() });
     }
   };
@@ -63,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await loadCollector(targetUser.id, targetUser.phone || targetUser.user_metadata?.phone);
       }
     } catch (err) {
-      console.warn("refreshCollector error:", err);
+      // Silently handle refresh errors
     }
   };
 
@@ -79,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await loadCollector(activeUser.id, activeUser.phone || activeUser.user_metadata?.phone);
         }
       } catch (error) {
-        console.error("Error initializing auth:", error);
+        // Silently handle auth initialization errors
       } finally {
         setLoading(false);
       }

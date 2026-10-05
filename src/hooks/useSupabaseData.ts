@@ -389,7 +389,6 @@ export function useMembers() {
         .order("created_at", { ascending: false });
       
       if (error) {
-        console.warn("Error fetching members from Supabase, using cache:", error);
         return currentCache;
       }
 
@@ -521,7 +520,7 @@ async function ensureCollectorProfile(userId: string, name?: string) {
       });
     }
   } catch (e) {
-    console.warn("ensureCollectorProfile warning:", e);
+    // Silently handle profile ensure errors
   }
 }
 
@@ -571,7 +570,6 @@ export function useCreateGroup() {
       return { previousGroups };
     },
     onError: (err, _, context) => {
-      console.error("useCreateGroup error:", err);
       queryClient.setQueryData(["groups", collector?.id], context?.previousGroups);
     },
     onSuccess: (result) => {
@@ -716,7 +714,6 @@ export function useCreateMember() {
       return { previousMembers, memberId };
     },
     onError: (err, _, context) => {
-      console.warn("useCreateMember onError caught:", err);
       if (context?.previousMembers) {
         queryClient.setQueryData(["members", collector?.id], context.previousMembers);
       }
@@ -786,7 +783,6 @@ export function useUpdateMember() {
       return { previousMembers };
     },
     onError: (err, _, context) => {
-      console.warn("useUpdateMember onError caught:", err);
       if (context?.previousMembers) {
         queryClient.setQueryData(["members", collector?.id], context.previousMembers);
       }
@@ -890,7 +886,7 @@ export function useCreateSmsEntry() {
             }
           }
         } catch (err) {
-          console.warn("send-sms edge function notice:", err);
+          // Silently handle SMS edge function errors
         }
       }
 
@@ -1064,7 +1060,6 @@ export function useDeleteGroup() {
         // Try RPC delete_group_cascade first
         const { error: rpcError } = await supabase.rpc("delete_group_cascade", { p_group_id: id });
         if (rpcError) {
-          console.warn("RPC delete_group_cascade failed, falling back to archiving/deleting group:", rpcError);
           try { await supabase.from("disputes").delete().eq("group_id", id); } catch (_) {}
           try { await supabase.from("rollovers").delete().eq("group_id", id); } catch (_) {}
           try { await supabase.from("members").delete().eq("group_id", id); } catch (_) {}
@@ -1091,7 +1086,6 @@ export function useDeleteGroup() {
       return { previousGroups };
     },
     onError: (err, _, context) => {
-      console.error("Failed to delete group:", err);
       queryClient.setQueryData(["groups", collector?.id], context?.previousGroups);
     },
     onSettled: () => {
@@ -1215,7 +1209,6 @@ export function useRecordPayment() {
       return { previousTransactions, previousSmsLog };
     },
     onError: (err, _, context) => {
-      console.error("useRecordPayment error:", err);
       queryClient.setQueryData(["transactions", collector?.id], context?.previousTransactions);
       queryClient.setQueryData(["smsLog", collector?.id], context?.previousSmsLog);
     },
@@ -1277,7 +1270,6 @@ export function useRecordCorrection() {
       return { previousTransactions };
     },
     onError: (err, _, context) => {
-      console.error("useRecordCorrection error:", err);
       queryClient.setQueryData(["transactions", collector?.id], context?.previousTransactions);
     },
     onSettled: () => {
@@ -1304,7 +1296,7 @@ export function useCloseCycle() {
           return { group: efData.group };
         }
       } catch (err) {
-        console.warn("Edge Function close-cycle notice, falling back to server RPC:", err);
+        // Fallback to server RPC if edge function fails
       }
 
       // 2. Fallback to atomic SECURITY DEFINER RPC
@@ -1318,10 +1310,10 @@ export function useCloseCycle() {
           return { group: grpObj };
         }
         if (rpcErr) {
-          console.warn("close_cycle_transaction RPC notice, falling back to direct update:", rpcErr);
+          // Fallback to direct update if RPC fails
         }
       } catch (err) {
-        console.warn("close_cycle_transaction exception, falling back to direct update:", err);
+        // Fallback to direct update if exception occurs
       }
 
       // 3. Resilient fallback to direct Supabase table update
@@ -1349,7 +1341,6 @@ export function useCloseCycle() {
       return { previousGroups };
     },
     onError: (err, _, context) => {
-      console.error("useCloseCycle error:", err);
       queryClient.setQueryData(["groups", collector?.id], context?.previousGroups);
     },
     onSettled: () => {

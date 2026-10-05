@@ -122,7 +122,6 @@ export function useDexieSync() {
           });
         }
       } catch (err: any) {
-        console.warn("Sync queue item error:", err);
         await db.syncQueue.update(item.id, {
           status: "pending",
           retryCount: item.retryCount + 1,

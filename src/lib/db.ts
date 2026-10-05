@@ -74,7 +74,7 @@ export async function clearAllOfflineData(): Promise<void> {
       db.smsLog.clear(),
       db.syncQueue.clear(),
     ]);
-  } catch (err) {
-    console.warn("Failed to clear offline IndexedDB cache:", err);
+  } catch {
+    // Silently continue if IndexedDB clear fails
   }
 }

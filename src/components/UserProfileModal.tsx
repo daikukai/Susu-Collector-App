@@ -78,7 +78,6 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
         onClose();
       }, 1400);
     } catch (err: any) {
-      console.error("Failed to update profile:", err);
       setError(err.message || "Failed to update profile details.");
     } finally {
       setLoading(false);

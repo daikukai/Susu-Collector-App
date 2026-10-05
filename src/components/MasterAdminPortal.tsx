@@ -146,8 +146,8 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
       setResetModalCol(null);
       setNewPasswordInput("");
       setTimeout(() => setSuccessMessage(""), 5000);
-    } catch (err) {
-      console.error("Failed to reset password:", err);
+    } catch (err: any) {
+      alert("Failed to reset password: " + (err?.message || "Please try again"));
     } finally {
       setResettingPassword(false);
     }
@@ -162,8 +162,8 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
       ]);
       setInviteCodes(codesData);
       setStats(statsData);
-    } catch (err) {
-      console.error("Error fetching master admin data:", err);
+    } catch {
+      // Data fetch error handled gracefully by state
     } finally {
       if (showSpinner) setLoading(false);
     }
@@ -189,8 +189,8 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
       setCustomCode("");
       setSuccessMessage(`Key "${newCode.code}" generated successfully!`);
       setTimeout(() => setSuccessMessage(""), 4000);
-    } catch (err) {
-      console.error("Failed to generate code:", err);
+    } catch (err: any) {
+      alert("Failed to generate code: " + (err?.message || "Please try again"));
     } finally {
       setGenerating(false);
     }
@@ -217,8 +217,8 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
       }));
       setSuccessMessage(`Collector account "${col.name}" deleted successfully.`);
       setTimeout(() => setSuccessMessage(""), 4000);
-    } catch (err) {
-      console.error("Failed to delete collector:", err);
+    } catch (err: any) {
+      alert("Failed to delete collector: " + (err?.message || "Please try again"));
     } finally {
       setDeletingId(null);
     }
@@ -236,8 +236,8 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
       }));
       setSuccessMessage(`Super Admin status for "${col.name}" set to ${newRole ? "ACTIVE" : "REMOVED"}.`);
       setTimeout(() => setSuccessMessage(""), 4000);
-    } catch (err) {
-      console.error("Failed to update role:", err);
+    } catch (err: any) {
+      alert("Failed to update role: " + (err?.message || "Please try again"));
     }
   };
 

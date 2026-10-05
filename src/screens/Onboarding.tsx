@@ -55,7 +55,6 @@ export default function Onboarding({ userId, onComplete }: OnboardingProps) {
       });
       onComplete();
     } catch (err: any) {
-      console.error("Onboarding error:", err);
       setError(err.message || "Failed to create collector profile. Please try again.");
     } finally {
       setLoading(false);

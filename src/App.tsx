@@ -1,14 +1,15 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, lazy, Suspense } from "react";
 import { useAuth } from "./contexts/AuthContext";
 import { useDexieSync } from "./hooks/useDexieSync";
 import { db, enqueueSync } from "./lib/db";
-import { SusuCardModal } from "./components/SusuCardModal";
-import UserProfileModal from "./components/UserProfileModal";
-import MasterAdminPortal from "./components/MasterAdminPortal";
 import SusuLogo from "./components/SusuLogo";
-import ExportLedgerModal, { exportLedgerCsv } from "./components/ExportLedgerModal";
-import ExportMembersModal from "./components/ExportMembersModal";
 import { isUuid, newUuid } from "./lib/ids";
+
+const SusuCardModal = lazy(() => import("./components/SusuCardModal"));
+const UserProfileModal = lazy(() => import("./components/UserProfileModal"));
+const MasterAdminPortal = lazy(() => import("./components/MasterAdminPortal"));
+const ExportLedgerModal = lazy(() => import("./components/ExportLedgerModal"));
+const ExportMembersModal = lazy(() => import("./components/ExportMembersModal"));
 import {
   useGroups,
   useMembers,
@@ -50,7 +51,9 @@ interface AppState {
 const uid = (_prefix?: string) => newUuid();
 const mkTxId = () => {
   const d = new Date();
-  return "SUSU-" + d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0") + "-" + String(Math.floor(Math.random() * 900000) + 100000);
+  const datePart = d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
+  const uuidPart = newUuid().split('-')[0].toUpperCase();
+  return `SUSU-${datePart}-${uuidPart}`;
 };
 const fmt = (n: number, currency = "LRD") => currency + " " + Math.round(n).toLocaleString();
 const todayStr = () => {
@@ -85,7 +88,7 @@ function getMemberCode(m: Member, index?: number): string {
 
 function validateLiberiaPhone(rawPhone: string): { valid: boolean; formatted: string; error?: string } {
   const cleaned = rawPhone.replace(/[^\d+]/g, "");
-  
+
   if (!cleaned) {
     return { valid: false, formatted: "", error: "Phone number is required." };
   }
@@ -114,6 +117,37 @@ function validateLiberiaPhone(rawPhone: string): { valid: boolean; formatted: st
   const formatted = `+231 ${carrier} ${middle} ${end}`;
 
   return { valid: true, formatted };
+}
+
+function validateAmount(input: string, maxAmount?: number): { valid: boolean; value: number; error?: string } {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return { valid: false, value: 0, error: "Amount is required." };
+  }
+
+  const regex = /^\d+(\.\d{1,2})?$/;
+  if (!regex.test(trimmed)) {
+    return { valid: false, value: 0, error: "Invalid amount format. Use numbers only (e.g., 100 or 100.50)." };
+  }
+
+  const value = parseFloat(trimmed);
+  if (isNaN(value)) {
+    return { valid: false, value: 0, error: "Invalid amount." };
+  }
+
+  if (value <= 0) {
+    return { valid: false, value: 0, error: "Amount must be greater than 0." };
+  }
+
+  if (maxAmount && value > maxAmount) {
+    return { valid: false, value: 0, error: `Amount cannot exceed ${fmt(maxAmount)}.` };
+  }
+
+  if (value > 10000000) {
+    return { valid: false, value: 0, error: "Amount is too large. Maximum is 10,000,000." };
+  }
+
+  return { valid: true, value };
 }
 
 function fmtTimestamp(ts: string): string {
@@ -153,16 +187,17 @@ function periodsElapsed(startDateStr: string, frequency = "Daily", asOfStr?: str
   sDate.setHours(0, 0, 0, 0);
   eDate.setHours(0, 0, 0, 0);
   
-  const diffDays = Math.max(Math.floor((eDate.getTime() - sDate.getTime()) / 86400000) + 1, 0);
-  if (diffDays <= 0) return 0;
+  const diffMs = eDate.getTime() - sDate.getTime();
+  if (diffMs < 0) return 1;
+  const diffDays = Math.floor(diffMs / 86400000);
   
   if (frequency === "Weekly") {
-    return Math.max(Math.floor((diffDays - 1) / 7) + 1, 1);
+    return Math.floor(diffDays / 7) + 1;
   } else if (frequency === "Monthly") {
     const months = (eDate.getFullYear() - sDate.getFullYear()) * 12 + (eDate.getMonth() - sDate.getMonth());
     return Math.max(months + 1, 1);
   }
-  return diffDays;
+  return diffDays + 1;
 }
 
 function advanceDate(dateStr: string, frequency = "Daily"): string {
@@ -181,8 +216,27 @@ function advanceDate(dateStr: string, frequency = "Daily"): string {
 }
 
 function totalCyclePeriods(g: Group): number | null {
-  if (!g.endDate) return null;
-  return periodsElapsed(g.startDate, g.frequency, g.endDate);
+  if (g.endDate) {
+    const sDate = parseDateLocal(g.startDate);
+    const eDate = parseDateLocal(g.endDate);
+    sDate.setHours(0, 0, 0, 0);
+    eDate.setHours(0, 0, 0, 0);
+    const diffMs = eDate.getTime() - sDate.getTime();
+    if (diffMs <= 0) return 1;
+    const diffDays = Math.max(1, Math.round(diffMs / 86400000));
+    if (g.frequency === "Weekly") {
+      return Math.max(1, Math.round(diffDays / 7));
+    }
+    if (g.frequency === "Monthly") {
+      const months = (eDate.getFullYear() - sDate.getFullYear()) * 12 + (eDate.getMonth() - sDate.getMonth());
+      return Math.max(1, months);
+    }
+    return Math.max(1, diffDays + 1);
+  }
+  if (g.cycles && g.cycles > 0) {
+    return g.cycles;
+  }
+  return null;
 }
 
 // SMS content builder
@@ -209,19 +263,15 @@ function mkSms(memberId: string, kind: string, content: string): SmsEntry {
 function deduplicateTransactions(txs: Tx[]): Tx[] {
   const seenIds = new Set<string>();
   const seenDisplayIds = new Set<string>();
-  const seenCompositeKeys = new Set<string>();
   const result: Tx[] = [];
 
   for (const t of txs) {
+    if (!t.id) continue;
     if (seenIds.has(t.id)) continue;
     if (t.displayId && seenDisplayIds.has(t.displayId)) continue;
 
-    const compKey = `${t.groupId}-${t.memberId}-${t.date}-${t.amount}-${t.type}`;
-    if (seenCompositeKeys.has(compKey)) continue;
-
     seenIds.add(t.id);
     if (t.displayId) seenDisplayIds.add(t.displayId);
-    seenCompositeKeys.add(compKey);
     result.push(t);
   }
   return result;
@@ -271,12 +321,12 @@ function memberStats(state: AppState, m: Member) {
   if (!g) {
     return { expected: 0, paid: 0, outstanding: 0, pastArrears: 0, status: "Not due", elapsed: 0, carried: 0, pastElapsed: 0, pastExpected: 0 };
   }
-  const rawElapsed = g.virtualDate ? periodsElapsed(g.startDate, g.frequency, g.virtualDate) : 1;
+  const rosterDate = g.virtualDate || g.startDate || todayStr();
+  const rawElapsed = periodsElapsed(g.startDate, g.frequency, rosterDate);
   const cp = totalCyclePeriods(g);
-  // Cap elapsed to total cycle periods if endDate is defined
+  // Cap elapsed to total cycle periods if defined
   const elapsed = cp !== null ? Math.min(rawElapsed, cp) : rawElapsed;
 
-  const rosterDate = g.virtualDate || todayStr();
   const isCycleFinished = g.archived || (!!g.endDate && rosterDate > g.endDate) || allMembersPaidOut(state, g.id);
 
   // Completed past periods: if cycle is active, current period (rosterDate) is active, so past periods = max(0, elapsed - 1).
@@ -345,9 +395,10 @@ function groupTotals(state: AppState, gid: string) {
   // COLLECTION POT BALANCE = TOTAL CONTRIBUTIONS IN - TOTAL OUTFLOWS DISBURSED (PAYOUTS & FEES)
   const balance = Math.max(0, contributions - payouts - collectorFees);
 
-  // full-cycle expected if endDate known
+  // full-cycle expected bounded by cycle periods
   const cp = totalCyclePeriods(g);
-  const fullCycleExpected = cp !== null ? members.length * g.amount * cp : expected;
+  const cycleTargetPeriods = cp !== null ? cp : (g.cycles && g.cycles > 0 ? g.cycles : Math.max(1, members.length));
+  const fullCycleExpected = members.length * g.amount * cycleTargetPeriods;
   return { expected, fullCycleExpected, contributions, payouts, collectorFees, plannedCommission, outstanding, pastArrears, balance, paid: memberPaid, hasEndDate: !!g.endDate };
 }
 // Per-member payout is based on the group's configured fee. Actual cash movement
@@ -505,7 +556,7 @@ function TodayTab({ state, setState, goCollect, goFinance }: {
   }
   const t = groupTotals(state, g.id);
   const members = state.members.filter((m) => m.groupId === g.id);
-  const rosterDate = g.virtualDate || todayStr();
+  const rosterDate = g.virtualDate || g.startDate || todayStr();
   const isCycleEnded = g.archived || (!!g.endDate && rosterDate > g.endDate) || allMembersPaidOut(state, g.id);
   const sup = supersededMap(state.transactions);
   const collectedToday = members.filter((m) =>
@@ -693,7 +744,7 @@ function CollectTab({ state, setState, initialSub = "Roster", goHome }: {
   }
   const members = state.members.filter((m) => m.groupId === g.id);
 
-  const rosterDate = g.virtualDate || todayStr();
+  const rosterDate = g.virtualDate || g.startDate || todayStr();
   const isCycleEnded = g.archived || (!!g.endDate && rosterDate > g.endDate) || allMembersPaidOut(state, g.id);
   const sup = supersededMap(state.transactions);
   const memberTodayPaid = (mid: string) => state.transactions
@@ -795,8 +846,9 @@ function CollectTab({ state, setState, initialSub = "Roster", goHome }: {
   const recordPayment = () => {
     if (isCycleEnded) { setPayErr("Savings cycle has ended. Roster is closed."); return; }
     if (hasMemberPayout(state, payMember, g.id)) { setPayErr("Member has already been paid out. Contributions locked."); return; }
-    const amt = parseFloat(payAmt);
-    if (!amt || amt <= 0) { setPayErr("Enter an amount greater than 0."); return; }
+    const validation = validateAmount(payAmt, g.amount * 10);
+    if (!validation.valid) { setPayErr(validation.error || "Invalid amount."); return; }
+    const amt = validation.value;
     setPayErr("");
     const recId = mkTxId();
     const ts = nowISO();
@@ -822,11 +874,20 @@ function CollectTab({ state, setState, initialSub = "Roster", goHome }: {
 
   const saveCorrection = () => {
     const errs: Record<string, string> = {};
-    const amt = parseFloat(corrAmt);
-    if (!amt || amt < 0) errs.amount = "Enter a valid amount.";
+    const validation = validateAmount(corrAmt, g.amount * 10);
+    if (!validation.valid) {
+      errs.amount = validation.error || "Enter a valid amount.";
+    } else if (validation.value < 0) {
+      errs.amount = "Amount cannot be negative.";
+    }
     if (!corrReason.trim()) errs.reason = "Explain why this is being corrected.";
     if (Object.keys(errs).length) { setCorrErrors(errs); return; }
     if (!origTx) return;
+    if (sup[origTx.id]) {
+      setCorrErrors({ reason: "This transaction has already been superseded by another correction." });
+      return;
+    }
+    const amt = validation.value;
     const ts = nowISO();
     const newTx: Tx = { id: uid("t"), groupId: origTx.groupId, memberId: origTx.memberId, type: "correction", amount: amt, date: rosterDate, timestamp: ts, method: origTx.method, note: corrReason, supersedes: origTx.id, originalAmount: origTx.amount };
     // optionally update member name
@@ -1345,19 +1406,23 @@ function MembersTab({
         })}
       </div>
       {cardMember && (
-        <SusuCardModal
-          member={cardMember}
-          group={g}
-          collectorName={state.collectorName}
-          onClose={() => setCardMember(null)}
-        />
+        <Suspense fallback={null}>
+          <SusuCardModal
+            member={cardMember}
+            group={g}
+            collectorName={state.collectorName}
+            onClose={() => setCardMember(null)}
+          />
+        </Suspense>
       )}
-      <ExportMembersModal
-        isOpen={showExportMembersModal}
-        onClose={() => setShowExportMembersModal(false)}
-        state={state}
-        activeGroupId={g.id}
-      />
+      <Suspense fallback={null}>
+        <ExportMembersModal
+          isOpen={showExportMembersModal}
+          onClose={() => setShowExportMembersModal(false)}
+          state={state}
+          activeGroupId={g.id}
+        />
+      </Suspense>
     </div>
   );
 }
@@ -1409,7 +1474,7 @@ function FinanceTab({
     const m = members.find((x) => x.id === memberId)!;
     const ts = nowISO();
     const recId = mkTxId();
-    const rosterDate = g.virtualDate || todayStr();
+    const rosterDate = g.virtualDate || g.startDate || todayStr();
     const newTx: Tx = {
       id: uid("t"),
       groupId: g.id,
@@ -1833,12 +1898,14 @@ function FinanceTab({
             })}
             {ledRows.length === 0 && <p className="p-6 text-sm text-gray-400 text-center">No member transactions match your search filter.</p>}
           </Card>
-          <ExportLedgerModal
-            isOpen={showExportModal}
-            onClose={() => setShowExportModal(false)}
-            state={state}
-            activeGroupId={g.id}
-          />
+          <Suspense fallback={null}>
+            <ExportLedgerModal
+              isOpen={showExportModal}
+              onClose={() => setShowExportModal(false)}
+              state={state}
+              activeGroupId={g.id}
+            />
+          </Suspense>
         </div>
       )}
     </div>
@@ -2093,12 +2160,14 @@ function ReconcileSub({ state, g, t, onBack }: { state: AppState; g: Group; t: R
           </Card>
         </div>
       )}
-      <ExportLedgerModal
-        isOpen={showExportModal}
-        onClose={() => setShowExportModal(false)}
-        state={state}
-        activeGroupId={g.id}
-      />
+      <Suspense fallback={null}>
+        <ExportLedgerModal
+          isOpen={showExportModal}
+          onClose={() => setShowExportModal(false)}
+          state={state}
+          activeGroupId={g.id}
+        />
+      </Suspense>
     </div>
   );
 }
@@ -2276,8 +2345,12 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
     if (!editingGroup) return;
     const errs: Record<string, string> = {};
     if (!editName.trim()) errs.name = "Group name is required.";
-    const amt = parseFloat(editAmt);
-    if (!amt || amt <= 0) errs.amount = "Enter a valid amount.";
+    const validation = validateAmount(editAmt);
+    if (!validation.valid) {
+      errs.amount = validation.error || "Enter a valid amount.";
+    } else if (validation.value <= 0) {
+      errs.amount = "Amount must be greater than 0.";
+    }
     if (!editEnd) {
       errs.endDate = "Select an end date.";
     } else if (editEnd <= editStart) {
@@ -2285,6 +2358,7 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
     }
     if (Object.keys(errs).length > 0) { setEditErrors(errs); return; }
 
+    const amt = validation.value;
     const updatedG: Group = {
       ...editingGroup,
       name: editName.trim(),
@@ -2295,6 +2369,7 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
       endDate: editEnd,
       feeType: (editFeeTypeChoice as any) || "1_unit",
       feeValue: editFeeTypeChoice === "none" ? 0 : 1,
+      virtualDate: editingGroup.virtualDate || editStart || todayStr(),
     };
 
     setState({
@@ -2329,8 +2404,12 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
   const createGroup = () => {
     const errs: Record<string, string> = {};
     if (!gName.trim()) errs.name = "Enter a group name.";
-    const amt = parseFloat(gAmt);
-    if (!amt || amt <= 0) errs.amount = "Enter a contribution amount.";
+    const validation = validateAmount(gAmt);
+    if (!validation.valid) {
+      errs.amount = validation.error || "Enter a contribution amount.";
+    } else if (validation.value <= 0) {
+      errs.amount = "Amount must be greater than 0.";
+    }
     if (!gStart) {
       errs.startDate = "Select a start date.";
     }
@@ -2343,12 +2422,14 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
       errs.fee = "Select a collector's fee structure.";
     }
     if (Object.keys(errs).length) { setGErrors(errs); return; }
+    const amt = validation.value;
     const ng: Group = {
       id: uid("g"), name: gName.trim(), amount: amt, currency: gCur,
       frequency: gFreq, cycles: 1, cycleNumber: 1, payoutOrder: "Fixed rotation",
       startDate: gStart || todayStr(), endDate: gEnd || undefined,
       feeType: (feeTypeChoice as any) || "1_unit",
       feeValue: feeTypeChoice === "none" ? 0 : 1,
+      virtualDate: gStart || todayStr(),
     };
     setState({ ...state, groups: [...state.groups, ng], activeGroupId: ng.id });
     goMembers();
@@ -2791,7 +2872,8 @@ export default function App({ collectorName = "Collector" }: AppProps) {
             }
           },
           onError: (error) => {
-            console.error('Failed to create group:', error);
+            setToastMsg("Failed to create group. Please try again.");
+            setTimeout(() => setToastMsg(null), 3000);
           }
         });
       });
@@ -2803,7 +2885,8 @@ export default function App({ collectorName = "Collector" }: AppProps) {
       deletedGroups.forEach(g => {
         deleteGroup.mutate(g.id, {
           onError: (error) => {
-            console.error('Failed to delete group:', error);
+            setToastMsg("Failed to delete group. Please try again.");
+            setTimeout(() => setToastMsg(null), 3000);
           }
         });
       });
@@ -2829,13 +2912,15 @@ export default function App({ collectorName = "Collector" }: AppProps) {
         if (newGroup.archived && !oldGroup.archived) {
           closeCycle.mutate(newGroup.id, {
             onError: (error) => {
-              console.error('Failed to close cycle:', error);
+              setToastMsg("Failed to close cycle. Please try again.");
+              setTimeout(() => setToastMsg(null), 3000);
             }
           });
         } else {
           updateGroup.mutate({ id: newGroup.id, updates: newGroup }, {
             onError: (error) => {
-              console.error('Failed to update group:', error);
+              setToastMsg("Failed to update group. Please try again.");
+              setTimeout(() => setToastMsg(null), 3000);
             }
           });
         }
@@ -2848,7 +2933,8 @@ export default function App({ collectorName = "Collector" }: AppProps) {
       newMembers.forEach(m => {
         createMember.mutate(m, {
           onError: (error) => {
-            console.error('Failed to create member:', error);
+            setToastMsg("Failed to create member. Please try again.");
+            setTimeout(() => setToastMsg(null), 3000);
           }
         });
       });
@@ -2860,7 +2946,8 @@ export default function App({ collectorName = "Collector" }: AppProps) {
       deletedMembers.forEach(m => {
         deleteMember.mutate(m.id, {
           onError: (error) => {
-            console.error('Failed to delete member:', error);
+            setToastMsg("Failed to delete member. Please try again.");
+            setTimeout(() => setToastMsg(null), 3000);
           }
         });
       });
@@ -2872,7 +2959,8 @@ export default function App({ collectorName = "Collector" }: AppProps) {
       if (oldMember && (newMember.name !== oldMember.name || newMember.phone !== oldMember.phone)) {
         updateMember.mutate({ id: newMember.id, updates: newMember }, {
           onError: (error) => {
-            console.error('Failed to update member:', error);
+            setToastMsg("Failed to update member. Please try again.");
+            setTimeout(() => setToastMsg(null), 3000);
           }
         });
       }
@@ -2897,7 +2985,8 @@ export default function App({ collectorName = "Collector" }: AppProps) {
             displayId: t.displayId || mkTxId(),
           }, {
             onError: (error) => {
-              console.error('Failed to record payment:', error);
+              setToastMsg("Failed to record payment. Please try again.");
+              setTimeout(() => setToastMsg(null), 3000);
             }
           });
         } else if (t.type === "correction" && t.supersedes && t.originalAmount !== undefined) {
@@ -2912,14 +3001,16 @@ export default function App({ collectorName = "Collector" }: AppProps) {
             originalAmount: t.originalAmount,
           }, {
             onError: (error) => {
-              console.error('Failed to record correction:', error);
+              setToastMsg("Failed to record correction. Please try again.");
+              setTimeout(() => setToastMsg(null), 3000);
             }
           });
         } else {
           // Use regular mutation for other transaction types (payouts, collector fees)
           createTransaction.mutate(t, {
             onError: (error) => {
-              console.error('Failed to create transaction:', error);
+              setToastMsg("Failed to create transaction. Please try again.");
+              setTimeout(() => setToastMsg(null), 3000);
             }
           });
         }
@@ -2932,7 +3023,8 @@ export default function App({ collectorName = "Collector" }: AppProps) {
       newSms.forEach(s => {
         createSmsEntry.mutate(s, {
           onError: (error) => {
-            console.error('Failed to create/send SMS entry:', error);
+            setToastMsg("Failed to send SMS. Please try again.");
+            setTimeout(() => setToastMsg(null), 3000);
           }
         });
       });
@@ -2944,7 +3036,8 @@ export default function App({ collectorName = "Collector" }: AppProps) {
       newDisputes.forEach(d => {
         createDispute.mutate(d, {
           onError: (error) => {
-            console.error('Failed to create dispute:', error);
+            setToastMsg("Failed to create dispute. Please try again.");
+            setTimeout(() => setToastMsg(null), 3000);
           }
         });
       });
@@ -2956,7 +3049,8 @@ export default function App({ collectorName = "Collector" }: AppProps) {
       if (oldDispute && newDispute.status !== oldDispute.status) {
         updateDispute.mutate({ id: newDispute.id, updates: { status: newDispute.status } }, {
           onError: (error) => {
-            console.error('Failed to update dispute:', error);
+            setToastMsg("Failed to update dispute. Please try again.");
+            setTimeout(() => setToastMsg(null), 3000);
           }
         });
       }
@@ -2968,7 +3062,8 @@ export default function App({ collectorName = "Collector" }: AppProps) {
       newRollovers.forEach(r => {
         createRollover.mutate(r, {
           onError: (error) => {
-            console.error('Failed to create rollover:', error);
+            setToastMsg("Failed to create rollover. Please try again.");
+            setTimeout(() => setToastMsg(null), 3000);
           }
         });
       });
@@ -3131,8 +3226,10 @@ export default function App({ collectorName = "Collector" }: AppProps) {
           })}
         </div>
       </nav>
-      <UserProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} />
-      <MasterAdminPortal isOpen={showMasterAdminModal} onClose={() => setShowMasterAdminModal(false)} />
+      <Suspense fallback={null}>
+        {showProfileModal && <UserProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} />}
+        {showMasterAdminModal && <MasterAdminPortal isOpen={showMasterAdminModal} onClose={() => setShowMasterAdminModal(false)} />}
+      </Suspense>
     </div>
   );
 }

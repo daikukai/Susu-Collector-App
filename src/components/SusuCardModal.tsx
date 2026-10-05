@@ -139,8 +139,8 @@ export function SusuCardModal({ member, group, collectorName, onClose }: SusuCar
             if (b64 && b64.startsWith("data:")) {
               img.src = b64;
             }
-          } catch (e) {
-            console.warn("Could not convert image to base64:", e);
+          } catch {
+            // Silently continue if base64 conversion fails
           }
         }
       }
@@ -209,7 +209,6 @@ export function SusuCardModal({ member, group, collectorName, onClose }: SusuCar
       document.body.removeChild(link);
       setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
     } catch (err: any) {
-      console.error("Failed to generate PDF card:", err);
       alert("Error downloading PDF card: " + (err?.message || "Please try again"));
     } finally {
       setIsGenerating(false);
@@ -385,3 +384,5 @@ export function SusuCardModal({ member, group, collectorName, onClose }: SusuCar
     </div>
   );
 }
+
+export default SusuCardModal;

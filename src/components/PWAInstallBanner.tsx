@@ -73,13 +73,11 @@ export function PWAInstallBanner() {
     if (promptObj) {
       try {
         promptObj.prompt();
-        const { outcome } = await promptObj.userChoice;
-        console.log(`[PWA] Install prompt outcome: ${outcome}`);
+        await promptObj.userChoice;
         (window as any).deferredPWAInstallPrompt = null;
         setDeferredPrompt(null);
         setShowBanner(false);
-      } catch (err) {
-        console.warn("[PWA] Prompt error:", err);
+      } catch {
         setShowInstructions(true);
       }
     } else {

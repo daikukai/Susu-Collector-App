@@ -123,7 +123,6 @@ export default function Login({ onSuccess }: LoginProps) {
       }
       onSuccess();
     } catch (err: any) {
-      console.error("Auth error:", err);
       setError(err.message || "Authentication failed. Please check your phone number and password.");
     } finally {
       setLoading(false);

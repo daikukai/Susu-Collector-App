@@ -2,8 +2,8 @@ import { supabase } from "./supabase";
 import type { Session, User } from "@supabase/supabase-js";
 import { clearAllOfflineData } from "./db";
 
-export const SUPER_ADMIN_PHONE = "+231886884019";
-export const ADMIN_WHATSAPP_PHONE = "+231778445619";
+export const SUPER_ADMIN_PHONE = import.meta.env.VITE_SUPER_ADMIN_PHONE || "+231886884019";
+export const ADMIN_WHATSAPP_PHONE = import.meta.env.VITE_ADMIN_WHATSAPP_PHONE || "+231778445619";
 
 export interface Collector {
   id: string;
@@ -83,7 +83,7 @@ export function saveLocalCollector(collectorObj: Collector) {
     const updated = [merged, ...filtered];
     localStorage.setItem("susu_registered_collectors", JSON.stringify(updated));
   } catch (err) {
-    console.warn("Failed to save local collector:", err);
+    // Silently handle localStorage errors
   }
 }
 
@@ -158,7 +158,7 @@ export async function signUpWithPhone(phone: string, password: string, inviteCod
       });
       if (signInData?.user) sessionUser = signInData.user;
     } catch (signInErr) {
-      console.warn("Auto sign-in notice post registration:", signInErr);
+      // Silently handle auto sign-in errors
     }
   }
 
@@ -185,7 +185,7 @@ export async function signUpWithPhone(phone: string, password: string, inviteCod
         is_super_admin: isSuperAdmin,
       });
     } catch (err) {
-      console.warn("Auto create collector record notice:", err);
+      // Silently handle auto create collector errors
     }
   }
 
@@ -272,7 +272,7 @@ export async function signOut() {
   try {
     await clearAllOfflineData();
   } catch (err) {
-    console.warn("Notice: Error clearing offline storage during sign out:", err);
+    // Silently handle offline storage errors
   }
   if (typeof window !== "undefined") {
     try {
@@ -528,7 +528,7 @@ function saveLocalCustomInviteCode(codeObj: InviteCode) {
     const updated = [codeObj, ...filtered];
     localStorage.setItem("susu_custom_invite_codes", JSON.stringify(updated));
   } catch (err) {
-    console.warn("Failed to save local invite code:", err);
+    // Silently handle localStorage errors
   }
 }
 
@@ -592,7 +592,7 @@ export async function generateInviteCode(
       return data;
     }
   } catch (err) {
-    console.warn("Supabase invite code insert warning:", err);
+    // Silently handle Supabase insert errors
   }
 
   return newObj;
@@ -626,7 +626,7 @@ export async function validateInviteCode(rawCode: string): Promise<{ valid: bool
       }
     }
   } catch (err) {
-    console.warn("RPC redeem_invite_code notice:", err);
+    // Silently handle RPC errors
   }
 
   // 2. Check local custom generated codes (offline mode / local admin cache)
@@ -662,7 +662,7 @@ export async function redeemInviteCode(code: string, phone: string): Promise<boo
       return true;
     }
   } catch (err) {
-    console.warn("redeem_invite_code RPC error:", err);
+    // Silently handle RPC errors
   }
 
   const localCodes = getLocalCustomInviteCodes();
@@ -698,7 +698,7 @@ export async function adminResetUserPassword(phone: string, newPassword: string,
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     return !error;
   } catch (err) {
-    console.error("adminResetUserPassword error:", err);
+    // In production, log this error to monitoring service
     return false;
   }
 }
@@ -852,7 +852,7 @@ export async function getSuperAdminStats(): Promise<{
       collectorsList: combinedList,
     };
   } catch (err) {
-    console.warn("getSuperAdminStats notice:", err);
+    // Silently handle stats fetch errors
     return {
       totalCollectors: 1,
       totalGroups: 0,
