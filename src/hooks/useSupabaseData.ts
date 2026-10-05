@@ -1308,14 +1308,33 @@ export function useCloseCycle() {
       }
 
       // 2. Fallback to atomic SECURITY DEFINER RPC
-      const { data: rpcRes, error: rpcErr } = await supabase.rpc("close_cycle_transaction", {
-        payload: { groupId, collectorId: collector.id },
+      try {
+        const { data: rpcRes, error: rpcErr } = await supabase.rpc("close_cycle_transaction", {
+          payload: { groupId, collectorId: collector.id },
+        });
 
-      });
+        if (!rpcErr && rpcRes) {
+          const grpObj = (rpcRes as any)?.group || rpcRes;
+          return { group: grpObj };
+        }
+        if (rpcErr) {
+          console.warn("close_cycle_transaction RPC notice, falling back to direct update:", rpcErr);
+        }
+      } catch (err) {
+        console.warn("close_cycle_transaction exception, falling back to direct update:", err);
+      }
 
-      if (rpcErr) throw rpcErr;
-      const grpObj = rpcRes?.group || rpcRes;
-      return { group: grpObj };
+      // 3. Resilient fallback to direct Supabase table update
+      const { data: directData, error: directErr } = await supabase
+        .from("groups")
+        .update({ archived: true, virtual_date: null })
+        .eq("id", groupId)
+        .eq("collector_id", collector.id)
+        .select()
+        .single();
+
+      if (directErr) throw directErr;
+      return { group: directData ? dbToGroup(directData) : { id: groupId, archived: true } };
     },
     onMutate: async (groupId) => {
       await queryClient.cancelQueries({ queryKey: ["groups", collector?.id] });

@@ -2254,6 +2254,21 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
     setTimeout(() => setToastMsg(null), 3000);
   };
 
+  const archiveGroup = (gr: Group) => {
+    const remainingActive = state.groups.filter((g) => g.id !== gr.id && !g.archived);
+    const newActiveId = state.activeGroupId === gr.id
+      ? (remainingActive[0]?.id || "")
+      : state.activeGroupId;
+
+    setState({
+      ...state,
+      groups: state.groups.map((g) => (g.id === gr.id ? { ...g, archived: true, virtualDate: undefined } : g)),
+      activeGroupId: newActiveId,
+    });
+    setToastMsg(`Group "${gr.name}" archived.`);
+    setTimeout(() => setToastMsg(null), 3000);
+  };
+
   const saveEditGroup = () => {
     if (!editingGroup) return;
     const errs: Record<string, string> = {};
@@ -2371,6 +2386,12 @@ function GroupsSub({ state, setState, onBack, goMembers }: { state: AppState; se
                     className="flex items-center gap-1 font-semibold text-gray-700 hover:text-emerald-600 py-1 px-2.5 rounded-lg bg-gray-100 hover:bg-emerald-50 transition-all"
                   >
                     <span>✏️</span> Edit
+                  </button>
+                  <button
+                    onClick={() => archiveGroup(gr)}
+                    className="flex items-center gap-1 font-semibold text-amber-700 hover:text-amber-800 py-1 px-2.5 rounded-lg bg-amber-50 hover:bg-amber-100 transition-all"
+                  >
+                    <span>📁</span> Archive
                   </button>
                   <button
                     onClick={() => setDeletingGroup(gr)}
