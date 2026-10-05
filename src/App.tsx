@@ -335,10 +335,9 @@ function groupTotals(state: AppState, gid: string) {
     return state.transactions.some((t) => t.memberId === m.id && !sup[t.id] && getRootTxType(t, state.transactions) === "contribution");
   }).length;
 
-  const plannedCommission = g.feeType === "percentage" && g.feeValue > 0
-    ? contributions * (g.feeValue / 100)
-    : ((g.feeType as string) === "1_unit" ? contributingMembers * g.amount
-      : ((g.feeType as string) === "fixed" ? (g.feeValue || 0) : 0));
+  const plannedCommission = g.feeType === "none"
+    ? 0
+    : (g.feeType === "fixed" ? (g.feeValue || 0) : contributingMembers * g.amount);
   
   // COLLECTION POT BALANCE = TOTAL CONTRIBUTIONS IN - TOTAL OUTFLOWS DISBURSED (PAYOUTS & FEES)
   const balance = Math.max(0, contributions - payouts - collectorFees);
@@ -357,9 +356,7 @@ function memberPayout(state: AppState, m: Member): number {
     .filter((t) => t.memberId === m.id && !sup[t.id] && getRootTxType(t, state.transactions) === "contribution")
     .reduce((a, t) => a + t.amount, 0);
   if (paid <= 0) return 0;
-  const fee = g.feeType === "percentage" && g.feeValue > 0
-    ? paid * (g.feeValue / 100)
-    : ((g.feeType as string) === "1_unit" ? Math.min(paid, g.amount) : 0);
+  const fee = g.feeType === "none" ? 0 : Math.min(paid, g.amount);
   return Math.max(0, paid - fee);
 }
 function payoutDate(g: Group): string | null {
@@ -622,15 +619,13 @@ function TodayTab({ state, setState, goCollect, goFinance }: {
       <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Today's workflow</p>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {/* Collector earnings — 1_unit or percentage */}
+        {/* Collector earnings — 1 contribution per member */}
         {g.feeType !== "none" && t.plannedCommission > 0 && (
           <Card className="p-4 flex items-center justify-between border border-emerald-100">
             <div>
               <p className="text-xs text-gray-400">Your collector's earnings</p>
               <p className="text-xs text-gray-500 mt-0.5">
-                {g.feeType === "percentage"
-                  ? `${g.feeValue}% of recorded contributions`
-                  : `1 contribution unit (${fmt(g.amount, g.currency)}) per member`}
+                1 contribution unit ({fmt(g.amount, g.currency)}) per member
               </p>
             </div>
             <p className="text-xl font-bold text-emerald-600">{fmt(t.plannedCommission, g.currency)}</p>

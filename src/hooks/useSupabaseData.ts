@@ -78,22 +78,29 @@ export interface SmsEntry {
 }
 
 // Helper to convert database types to app types
-const dbToGroup = (g: any): Group => ({
-  id: g.id,
-  name: g.name,
-  amount: Number(g.amount),
-  currency: g.currency,
-  frequency: g.frequency,
-  cycles: g.cycles,
-  cycleNumber: g.cycle_number,
-  payoutOrder: g.payout_order,
-  startDate: g.start_date,
-  endDate: g.end_date,
-  feeType: g.fee_type || "none",
-  feeValue: Number(g.fee_value),
-  virtualDate: g.virtual_date,
-  archived: g.archived,
-});
+const dbToGroup = (g: any): Group => {
+  const rawFeeType = g.fee_type;
+  const isNone = rawFeeType === "none" || (rawFeeType === "percentage" && Number(g.fee_value) === 0);
+  const feeType: "none" | "1_unit" = isNone ? "none" : "1_unit";
+  const feeValue = isNone ? 0 : 1;
+
+  return {
+    id: g.id,
+    name: g.name,
+    amount: Number(g.amount),
+    currency: g.currency,
+    frequency: g.frequency,
+    cycles: g.cycles,
+    cycleNumber: g.cycle_number,
+    payoutOrder: g.payout_order,
+    startDate: g.start_date,
+    endDate: g.end_date,
+    feeType,
+    feeValue,
+    virtualDate: g.virtual_date,
+    archived: g.archived,
+  };
+};
 
 const dbToMember = (m: any): Member => ({
   id: m.id,
@@ -166,8 +173,8 @@ const groupToDb = (g: Group) => ({
   payout_order: g.payoutOrder || "Fixed rotation",
   start_date: g.startDate && g.startDate.trim() ? g.startDate : new Date().toISOString().slice(0, 10),
   end_date: g.endDate && typeof g.endDate === "string" && g.endDate.trim() ? g.endDate.trim() : null,
-  fee_type: g.feeType || "none",
-  fee_value: Number(g.feeValue) || 0,
+  fee_type: g.feeType === "none" ? "none" : "1_unit",
+  fee_value: g.feeType === "none" ? 0 : 1,
   virtual_date: g.virtualDate && typeof g.virtualDate === "string" && g.virtualDate.trim() ? g.virtualDate.trim() : null,
   archived: Boolean(g.archived),
 });
@@ -185,8 +192,13 @@ const groupUpdatesToDb = (updates: Partial<Group>) => {
   if (updates.endDate !== undefined) {
     row.end_date = typeof updates.endDate === "string" && updates.endDate.trim() ? updates.endDate.trim() : null;
   }
-  if (updates.feeType !== undefined) row.fee_type = updates.feeType || "none";
-  if (updates.feeValue !== undefined) row.fee_value = Number(updates.feeValue) || 0;
+  if (updates.feeType !== undefined) {
+    row.fee_type = updates.feeType === "none" ? "none" : "1_unit";
+    row.fee_value = updates.feeType === "none" ? 0 : 1;
+  }
+  if (updates.feeValue !== undefined && updates.feeType === undefined) {
+    row.fee_value = Number(updates.feeValue) || 0;
+  }
   if (updates.virtualDate !== undefined) {
     row.virtual_date = typeof updates.virtualDate === "string" && updates.virtualDate.trim() ? updates.virtualDate.trim() : null;
   }
