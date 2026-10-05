@@ -728,15 +728,22 @@ function CollectTab({ state, setState, initialSub = "Roster", goHome }: {
 
   const [rosterToast, setRosterToast] = useState<string | null>(null);
   const [tappingMemberId, setTappingMemberId] = useState<string | null>(null);
+  const [justTappedIds, setJustTappedIds] = useState<Set<string>>(new Set());
 
   const tapRoster = (memberId: string) => {
     if (isCycleEnded) return;
-    if (tappingMemberId === memberId) return;
+    if (tappingMemberId === memberId || justTappedIds.has(memberId)) return;
     setTappingMemberId(memberId);
+    setJustTappedIds((prev) => new Set(prev).add(memberId));
 
     if (hasMemberPayout(state, memberId, g.id)) {
       setRosterToast("Member has already been paid out. Contributions locked.");
       setTappingMemberId(null);
+      setJustTappedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(memberId);
+        return next;
+      });
       setTimeout(() => setRosterToast(null), 3000);
       return;
     }
@@ -884,8 +891,8 @@ function CollectTab({ state, setState, initialSub = "Roster", goHome }: {
           <Card>
             {members.map((m, i) => {
               const todayPaid = memberTodayPaid(m.id);
-              const isDone = todayPaid >= g.amount;
-              const isPartial = todayPaid > 0 && todayPaid < g.amount;
+              const isDone = todayPaid >= g.amount || justTappedIds.has(m.id);
+              const isPartial = !justTappedIds.has(m.id) && todayPaid > 0 && todayPaid < g.amount;
               const remAmt = Math.max(0, g.amount - todayPaid);
               const paidOut = hasMemberPayout(state, m.id, g.id);
               const isTapping = tappingMemberId === m.id;
@@ -896,7 +903,10 @@ function CollectTab({ state, setState, initialSub = "Roster", goHome }: {
                     {paidOut ? (
                       <p className="text-xs text-purple-600 mt-0.5 font-medium">Paid Out · Contributions Locked</p>
                     ) : isDone ? (
-                      <p className="text-xs text-emerald-500 mt-0.5">Fully collected ({fmt(todayPaid, g.currency)}) · SMS sent</p>
+                      <p className="text-xs text-emerald-600 font-semibold mt-0.5 flex items-center gap-1">
+                        <CheckIcon className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Fully collected ({fmt(Math.max(todayPaid, g.amount), g.currency)}) · SMS sent</span>
+                      </p>
                     ) : isPartial ? (
                       <p className="text-xs text-amber-600 mt-0.5 font-semibold">Partial · {fmt(todayPaid, g.currency)} paid ({fmt(remAmt, g.currency)} remaining)</p>
                     ) : (
@@ -906,7 +916,10 @@ function CollectTab({ state, setState, initialSub = "Roster", goHome }: {
                   {paidOut ? (
                     <Badge color="purple">Paid Out</Badge>
                   ) : isDone ? (
-                    <Badge color="green"><CheckIcon className="w-3 h-3" /> Done</Badge>
+                    <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 shadow-xs border border-emerald-200">
+                      <CheckIcon className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>Done</span>
+                    </span>
                   ) : isCycleEnded ? (
                     <Badge color="purple">Roster Closed</Badge>
                   ) : isPartial ? (
