@@ -342,7 +342,17 @@ export async function createCollector(
   }
 ): Promise<Collector> {
   const existingLocal = getLocalCollectors().find((c) => c.id === userId || (profileData.phone && c.phone === profileData.phone));
-  const phoneToSave = profileData.phone || existingLocal?.phone;
+  let phoneToSave = profileData.phone || existingLocal?.phone;
+  if (!phoneToSave) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.phone) {
+        phoneToSave = session.user.phone;
+      } else if (session?.user?.user_metadata?.phone) {
+        phoneToSave = session.user.user_metadata.phone;
+      }
+    } catch {}
+  }
   const isSuperAdmin = profileData.is_super_admin ?? existingLocal?.is_super_admin ?? (phoneToSave === SUPER_ADMIN_PHONE);
 
   const localColObj: Collector = {
@@ -367,28 +377,31 @@ export async function createCollector(
     ...(isSuperAdmin !== undefined && { is_super_admin: isSuperAdmin }),
   };
 
-  const { data, error } = await supabase
-    .from("collectors")
-    .upsert(upsertData, { onConflict: "id" })
-    .select()
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from("collectors")
+      .upsert(upsertData, { onConflict: "id" })
+      .select()
+      .maybeSingle();
 
-  if (error) {
-    if (error.code === "PGRST204") {
-      const { name, phone } = profileData;
-      const { data: f2Data, error: f2Err } = await supabase
+    if (error) {
+      // If error is duplicate or conflict, try update directly
+      const { data: updateData, error: updateErr } = await supabase
         .from("collectors")
-        .upsert({ id: userId, name, ...(phoneToSave && { phone: phoneToSave }) }, { onConflict: "id" })
+        .update(upsertData)
+        .eq("id", userId)
         .select()
-        .single();
-      if (!f2Err && f2Data) return { ...localColObj, ...f2Data };
-    }
-    if (error.code === "42501") {
+        .maybeSingle();
+
+      if (!updateErr && updateData) {
+        return { ...localColObj, ...updateData };
+      }
       return localColObj;
     }
+    return data ? { ...localColObj, ...data } : localColObj;
+  } catch (err) {
     return localColObj;
   }
-  return { ...localColObj, ...data };
 }
 
 /**

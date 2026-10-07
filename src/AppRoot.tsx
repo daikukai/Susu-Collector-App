@@ -56,6 +56,7 @@ export default function AppRoot() {
       ) : isNewSignup ? (
         <Onboarding
           userId={user.id}
+          userPhone={user.phone || user.user_metadata?.phone}
           onComplete={() => {
             sessionStorage.removeItem("susu_is_new_signup");
             refreshCollector();

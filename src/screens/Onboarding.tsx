@@ -3,6 +3,7 @@ import { createCollector } from "../lib/auth";
 
 interface OnboardingProps {
   userId: string;
+  userPhone?: string;
   onComplete: () => void;
 }
 
@@ -14,7 +15,7 @@ const PRESET_AVATARS = [
   "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80",
 ];
 
-export default function Onboarding({ userId, onComplete }: OnboardingProps) {
+export default function Onboarding({ userId, userPhone, onComplete }: OnboardingProps) {
   const [name, setName] = useState("");
   const [businessName, setBusinessName] = useState("");
   const [businessAddress, setBusinessAddress] = useState("");
@@ -52,6 +53,7 @@ export default function Onboarding({ userId, onComplete }: OnboardingProps) {
         business_name: businessName.trim() || name.trim() + " Susu Services",
         business_address: businessAddress.trim(),
         avatar_url: avatarUrl,
+        phone: userPhone,
       });
       onComplete();
     } catch (err: any) {

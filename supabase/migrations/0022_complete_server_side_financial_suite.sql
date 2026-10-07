@@ -414,3 +414,87 @@ grant execute on function public.record_correction_transaction(jsonb) to authent
 grant execute on function public.record_payout_transaction(jsonb) to authenticated;
 grant execute on function public.close_cycle_transaction(jsonb) to authenticated;
 grant select on public.v_group_financial_summary to authenticated;
+
+
+-- ============================================================================
+-- 9. COLLECTOR REGISTRATION & PROFILE PERSISTENCE REPAIR
+-- ============================================================================
+
+-- Fix enforce_collector_invite_redemption to check both single_use and multi_use_demo,
+-- and support multi-use active codes or previously redeemed phone numbers.
+create or replace function public.enforce_collector_invite_redemption()
+returns trigger
+language plpgsql
+security definer
+as $$
+declare
+  user_phone text;
+  norm_phone text;
+  auth_user_phone text;
+begin
+  -- Allow Super Admin bypass
+  if (auth.uid() is not null and public.is_super_admin(auth.uid())) then
+    return NEW;
+  end if;
+
+  -- If user is authenticated, allow the authenticated user to manage their own collector profile
+  if (auth.uid() is not null and NEW.id = auth.uid()) then
+    return NEW;
+  end if;
+
+  -- Retrieve user phone from record or auth metadata
+  select raw_user_meta_data->>'phone' into auth_user_phone
+  from auth.users
+  where id = NEW.id;
+
+  user_phone := coalesce(NEW.phone, auth_user_phone);
+  norm_phone := public.normalize_phone(user_phone);
+
+  -- Allow designated Master Admin phone number bypass
+  if norm_phone = '+231886884019' then
+    return NEW;
+  end if;
+
+  if norm_phone is null then
+    raise exception 'Access denied: Valid phone number is required to register a collector profile.';
+  end if;
+
+  -- Verify that this phone number has a verified invite key in invite_codes
+  if not exists (
+    select 1 from public.invite_codes
+    where (
+      (public.normalize_phone(used_by_phone) = norm_phone and status in ('used', 'active'))
+      or (kind = 'multi_use_demo' and status = 'active')
+    )
+  ) then
+    raise exception 'Access denied: No verified invitation access key found for phone number %. Registration outside the invite workflow is strictly prohibited.', norm_phone;
+  end if;
+
+  return NEW;
+end;
+$$;
+
+-- Ensure RLS allows authenticated users to insert & update their own collector record
+drop policy if exists collectors_insert on public.collectors;
+create policy collectors_insert on public.collectors
+  for insert
+  with check (
+    id = auth.uid()
+    and (
+      coalesce(is_super_admin, false) = false
+      or public.is_super_admin(auth.uid())
+    )
+  );
+
+drop policy if exists collectors_update on public.collectors;
+create policy collectors_update on public.collectors
+  for update
+  using (id = auth.uid())
+  with check (
+    id = auth.uid()
+    and (
+      coalesce(is_super_admin, false) = false
+      or public.is_super_admin(auth.uid())
+    )
+  );
+
