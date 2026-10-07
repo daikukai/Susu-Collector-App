@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { updateCollectorProfile } from "../lib/auth";
+import { updateCollectorProfile, deleteAccount } from "../lib/auth";
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -26,6 +26,8 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
   const [role, setRole] = useState("Independent Field Collector");
 
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
 
@@ -87,6 +89,20 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
   const handleSignOut = async () => {
     onClose();
     await signOut();
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!user?.id) return;
+    setDeleting(true);
+    setError("");
+    try {
+      await deleteAccount(user.id);
+      onClose();
+      window.location.reload();
+    } catch (err: any) {
+      setError(err.message || "Failed to delete account.");
+      setDeleting(false);
+    }
   };
 
   const registeredPhone = user?.user_metadata?.phone || user?.phone || "Registered Account";
@@ -278,7 +294,7 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
             <button
               type="button"
               onClick={handleSignOut}
-              className="px-4 py-3 bg-red-50 text-red-600 text-xs font-bold rounded-xl hover:bg-red-100 transition-colors flex items-center space-x-1.5"
+              className="px-4 py-3 bg-gray-100 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-200 transition-colors flex items-center space-x-1.5"
             >
               <span>🚪 Sign Out</span>
             </button>
@@ -291,6 +307,53 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
               {loading ? "Saving Profile..." : "Save Profile Changes"}
             </button>
           </div>
+
+          {/* Danger Zone: Account Deletion */}
+          {!collector?.is_super_admin && (
+            <div className="mt-4 pt-4 border-t border-red-100">
+              {!showDeleteConfirm ? (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-red-700">Delete Account</p>
+                    <p className="text-[10px] text-gray-400">Permanently delete your profile & records</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+                  >
+                    Delete Account
+                  </button>
+                </div>
+              ) : (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl space-y-2">
+                  <div className="flex items-start gap-2">
+                    <span className="text-sm">⚠️</span>
+                    <p className="text-xs text-red-800 leading-relaxed font-medium">
+                      Are you sure you want to permanently delete your account and all associated groups, members, and transactions? This cannot be undone.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleDeleteAccount}
+                      disabled={deleting}
+                      className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-lg shadow-xs transition-all disabled:opacity-50"
+                    >
+                      {deleting ? "Deleting..." : "Yes, Delete Everything"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowDeleteConfirm(false)}
+                      className="px-3 py-2 bg-white border border-gray-200 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-50 transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </form>
       </div>
     </div>

@@ -285,6 +285,43 @@ export async function signOut() {
   if (error) throw error;
 }
 
+// Delete user account permanently
+export async function deleteAccount(userId?: string) {
+  try {
+    const { error: rpcErr } = await supabase.rpc("delete_account_cascade", {
+      target_user_id: userId || null,
+    });
+    if (rpcErr) {
+      // Fallback: try direct delete if RPC is pending
+      if (userId) {
+        await supabase.from("collectors").delete().eq("id", userId);
+      }
+    }
+  } catch {}
+
+  // Clean local devices storage
+  if (typeof window !== "undefined") {
+    try {
+      const stored = localStorage.getItem("susu_registered_collectors");
+      if (stored && userId) {
+        const parsed = JSON.parse(stored);
+        const filtered = parsed.filter((c: any) => c.id !== userId);
+        localStorage.setItem("susu_registered_collectors", JSON.stringify(filtered));
+      }
+      sessionStorage.clear();
+      localStorage.removeItem("susu_active_user");
+    } catch {}
+  }
+
+  try {
+    await clearAllOfflineData();
+  } catch {}
+
+  try {
+    await supabase.auth.signOut();
+  } catch {}
+}
+
 // Get current session
 export async function getSession() {
   const { data: { session }, error } = await supabase.auth.getSession();

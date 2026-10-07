@@ -498,3 +498,93 @@ create policy collectors_update on public.collectors
     )
   );
 
+drop policy if exists collectors_delete on public.collectors;
+create policy collectors_delete on public.collectors
+  for delete
+  using (
+    id = auth.uid()
+    or public.is_super_admin(auth.uid())
+  );
+
+-- Update protect_financial_ledger_immutability to allow deletion when account or group is being deleted
+create or replace function public.protect_financial_ledger_immutability()
+returns trigger
+language plpgsql
+security definer
+as $$
+begin
+  if (TG_OP = 'DELETE') then
+    if (current_setting('app.allow_ledger_delete', true) = 'true' or current_user in ('postgres', 'service_role')) then
+      return OLD;
+    end if;
+    -- If the collector who owns this transaction no longer exists, allow cascade
+    if not exists (select 1 from public.collectors where id = OLD.collector_id) then
+      return OLD;
+    end if;
+    raise exception 'Financial Integrity Error: Deletion of finalized transactions is strictly forbidden. Use void or reversal records instead.';
+  end if;
+
+  if (TG_OP = 'UPDATE') then
+    if (OLD.amount is distinct from NEW.amount
+        or OLD.group_id is distinct from NEW.group_id
+        or OLD.member_id is distinct from NEW.member_id
+        or OLD.type is distinct from NEW.type
+        or OLD.supersedes is distinct from NEW.supersedes
+        or OLD.original_amount is distinct from NEW.original_amount) then
+      raise exception 'Financial Integrity Error: Editing finalized transaction records is forbidden. Create an append-only correction record referencing the original transaction.';
+    end if;
+  end if;
+
+  return NEW;
+end;
+$$;
+
+-- Server-side RPC for collectors to cleanly delete their own account and all associated records
+create or replace function public.delete_account_cascade(target_user_id uuid default null)
+returns jsonb
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_caller_id uuid;
+  v_target_id uuid;
+begin
+  v_caller_id := auth.uid();
+  v_target_id := coalesce(target_user_id, v_caller_id);
+
+  if v_caller_id is null and current_user not in ('postgres', 'service_role') then
+    raise exception 'Unauthorized: Authentication required.';
+  end if;
+
+  -- Only self or super_admin or service_role can delete the account
+  if v_caller_id is not null and v_target_id != v_caller_id and not public.is_super_admin(v_caller_id) then
+    raise exception 'Unauthorized: You can only delete your own account.';
+  end if;
+
+  -- Prevent deleting the designated Master Admin account
+  if exists (select 1 from public.collectors where id = v_target_id and (is_super_admin = true or phone = '+231886884019')) then
+    raise exception 'Protected Account: Master Admin cannot be deleted.';
+  end if;
+
+  -- Allow ledger deletion in this session
+  perform set_config('app.allow_ledger_delete', 'true', true);
+
+  delete from public.audit_log where collector_id = v_target_id;
+  delete from public.sms_log where collector_id = v_target_id;
+  delete from public.disputes where collector_id = v_target_id;
+  delete from public.rollovers where collector_id = v_target_id;
+  delete from public.transactions where collector_id = v_target_id;
+  delete from public.members where collector_id = v_target_id;
+  delete from public.groups where collector_id = v_target_id;
+  delete from public.collectors where id = v_target_id;
+
+  -- Delete from auth.users
+  delete from auth.users where id = v_target_id;
+
+  return jsonb_build_object('success', true, 'message', 'Account and associated records deleted permanently.');
+end;
+$$;
+
+grant execute on function public.delete_account_cascade(uuid) to authenticated;
+
+
