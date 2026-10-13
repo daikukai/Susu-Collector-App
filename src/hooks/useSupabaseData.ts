@@ -331,23 +331,8 @@ async function recordLedgerTransaction(
         timestamp: new Date().toISOString(),
       } as Tx;
     }
-    // Online RPC fallback: insert directly into transactions table
-    try {
-      const row = {
-        id: txId,
-        ...txToDb({ ...tx, id: txId }),
-        collector_id: userId,
-      };
-      const { data: directData, error: directErr } = await supabase
-        .from("transactions")
-        .insert(row)
-        .select()
-        .single();
-      if (directErr) throw directErr;
-      return dbToTx(directData);
-    } catch (fallbackErr) {
-      throw new Error(persistErrorMessage(fallbackErr || err));
-    }
+
+    throw err instanceof Error ? err : new Error(persistErrorMessage(err));
   }
 }
 
@@ -1249,10 +1234,11 @@ export function useRecordCorrection() {
       await queryClient.cancelQueries({ queryKey: ["transactions", collector?.id] });
       
       const previousTransactions = queryClient.getQueryData(["transactions", collector?.id]) as Tx[];
+      const tempId = `temp-correction-${Date.now()}`;
       
       // Optimistic update
       const optimisticTx: Tx = {
-        id: `temp-${Date.now()}`,
+        id: tempId,
         groupId: params.groupId,
         memberId: params.memberId,
         type: "correction",
@@ -1263,11 +1249,19 @@ export function useRecordCorrection() {
         note: params.note || "Correction",
         supersedes: params.supersedes,
         originalAmount: params.originalAmount,
+        displayId: `correction-${params.supersedes}`,
       };
       
       queryClient.setQueryData(["transactions", collector?.id], (old: Tx[] = []) => [optimisticTx, ...(old || [])]);
       
-      return { previousTransactions };
+      return { previousTransactions, tempId };
+    },
+    onSuccess: (data, params, context) => {
+      const savedTx = data.transaction;
+      queryClient.setQueryData(["transactions", collector?.id], (old: Tx[] = []) => {
+        const withoutTemp = (old || []).filter((t) => t.id !== context?.tempId);
+        return [savedTx, ...withoutTemp];
+      });
     },
     onError: (err, _, context) => {
       queryClient.setQueryData(["transactions", collector?.id], context?.previousTransactions);
@@ -1286,47 +1280,31 @@ export function useCloseCycle() {
     mutationFn: async (groupId: string) => {
       if (!collector?.id) throw new Error("Not authenticated");
 
-      // 1. Attempt Edge Function invoke first
       try {
         const { data: efData, error: efErr } = await supabase.functions.invoke("close-cycle", {
           body: { groupId },
         });
 
-        if (!efErr && efData?.group) {
+        if (efErr) throw efErr;
+        if (efData?.group) {
           return { group: efData.group };
         }
-      } catch (err) {
-        // Fallback to server RPC if edge function fails
-      }
-
-      // 2. Fallback to atomic SECURITY DEFINER RPC
-      try {
+        throw new Error("The close-cycle service did not return a group.");
+      } catch (edgeError) {
         const { data: rpcRes, error: rpcErr } = await supabase.rpc("close_cycle_transaction", {
           payload: { groupId, collectorId: collector.id },
         });
 
-        if (!rpcErr && rpcRes) {
-          const grpObj = (rpcRes as any)?.group || rpcRes;
-          return { group: grpObj };
-        }
         if (rpcErr) {
-          // Fallback to direct update if RPC fails
+          throw new Error(rpcErr.message || "Server could not close this cycle.");
         }
-      } catch (err) {
-        // Fallback to direct update if exception occurs
+        if (!rpcRes) {
+          throw new Error("The close-cycle RPC did not return a group.");
+        }
+
+        const grpObj = (rpcRes as any)?.group || rpcRes;
+        return { group: grpObj };
       }
-
-      // 3. Resilient fallback to direct Supabase table update
-      const { data: directData, error: directErr } = await supabase
-        .from("groups")
-        .update({ archived: true, virtual_date: null })
-        .eq("id", groupId)
-        .eq("collector_id", collector.id)
-        .select()
-        .single();
-
-      if (directErr) throw directErr;
-      return { group: directData ? dbToGroup(directData) : { id: groupId, archived: true } };
     },
     onMutate: async (groupId) => {
       await queryClient.cancelQueries({ queryKey: ["groups", collector?.id] });

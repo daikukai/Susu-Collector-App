@@ -1,6 +1,21 @@
 import { useState } from "react";
 import type { Group, Member, Tx } from "../hooks/useSupabaseData";
 
+const escapeHtml = (value: unknown): string =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const formatCsvCell = (value: unknown): string => {
+  const raw = String(value ?? "");
+  const escaped = raw.replace(/"/g, '""');
+  const prefixed = /^([=+\-@])/.test(raw) ? `'${escaped}` : escaped;
+  return `"${prefixed}"`;
+};
+
 export interface AppState {
   collectorName: string;
   activeGroupId: string;
@@ -98,16 +113,16 @@ export function exportLedgerCsv(
       : tx.date;
 
     rows.push([
-      `"${tx.displayId || tx.id}"`,
-      `"${dateFormatted}"`,
-      `"${groupName.replace(/"/g, '""')}"`,
-      `"${memberCode}"`,
-      `"${memberName.replace(/"/g, '""')}"`,
-      `"${tx.type.toUpperCase()}"`,
-      `"${tx.method || "Cash"}"`,
-      String(tx.amount),
-      `"${(tx.note || "").replace(/"/g, '""')}"`,
-      tx.isArrears ? "Yes" : "No",
+      formatCsvCell(tx.displayId || tx.id),
+      formatCsvCell(dateFormatted),
+      formatCsvCell(groupName),
+      formatCsvCell(memberCode),
+      formatCsvCell(memberName),
+      formatCsvCell(tx.type.toUpperCase()),
+      formatCsvCell(tx.method || "Cash"),
+      formatCsvCell(tx.amount),
+      formatCsvCell(tx.note || ""),
+      formatCsvCell(tx.isArrears ? "Yes" : "No"),
     ]);
   });
 
@@ -202,7 +217,7 @@ export function exportLedgerPdf(
     <!DOCTYPE html>
     <html>
       <head>
-        <title>SusuBook Financial Statement - ${groupName}</title>
+        <title>SusuBook Financial Statement - ${escapeHtml(groupName)}</title>
         <style>
           @page { size: A4 portrait; margin: 12mm; }
           body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #0f172a; margin: 0; padding: 20px; font-size: 11px; line-height: 1.4; }
@@ -237,34 +252,34 @@ export function exportLedgerPdf(
             <div class="subtitle">Official Financial Ledger Statement</div>
           </div>
           <div style="text-align: right;">
-            <div style="font-size: 12px; font-weight: bold; color: #0f172a;">${dateStr}</div>
-            <div style="font-size: 10px; color: #64748b;">Report Scope: ${typeLabel}</div>
+            <div style="font-size: 12px; font-weight: bold; color: #0f172a;">${escapeHtml(dateStr)}</div>
+            <div style="font-size: 10px; color: #64748b;">Group: ${escapeHtml(groupName)}</div>
           </div>
         </div>
 
         <div class="meta-box">
           <div>
-            <div><strong>Collector Name:</strong> ${collectorName}</div>
-            <div><strong>Group Name:</strong> ${groupName}</div>
+            <div><strong>Collector Name:</strong> ${escapeHtml(collectorName)}</div>
+            <div><strong>Group Name:</strong> ${escapeHtml(groupName)}</div>
           </div>
           <div style="text-align: right;">
-            <div><strong>Records Included:</strong> ${sorted.length} transaction(s)</div>
-            <div><strong>Currency:</strong> ${currency}</div>
+            <div><strong>Filter:</strong> ${escapeHtml(typeLabel)}</div>
+            <div><strong>Currency:</strong> ${escapeHtml(currency)}</div>
           </div>
         </div>
 
         <div class="summary-cards">
           <div class="card">
             <div class="card-title">Total Collected (In)</div>
-            <div class="card-value">${currency} ${Math.round(totalIn).toLocaleString()}</div>
+            <div class="card-value">${escapeHtml(currency)} ${escapeHtml(Math.round(totalIn).toLocaleString())}</div>
           </div>
           <div class="card" style="background: #fef2f2; border-color: #fecaca;">
             <div class="card-title" style="color: #991b1b;">Total Paid Out</div>
-            <div class="card-value" style="color: #991b1b;">${currency} ${Math.round(totalOut).toLocaleString()}</div>
+            <div class="card-value" style="color: #991b1b;">${escapeHtml(currency)} ${escapeHtml(Math.round(totalOut).toLocaleString())}</div>
           </div>
           <div class="card" style="background: #eff6ff; border-color: #bfdbfe;">
             <div class="card-title" style="color: #1e40af;">Net Pot Balance</div>
-            <div class="card-value" style="color: #1e40af;">${currency} ${Math.round(totalIn - totalOut).toLocaleString()}</div>
+            <div class="card-value" style="color: #1e40af;">${escapeHtml(currency)} ${escapeHtml(Math.round(totalIn - totalOut).toLocaleString())}</div>
           </div>
         </div>
 
@@ -300,17 +315,18 @@ export function exportLedgerPdf(
                     })
                   : tx.date;
                 const tagClass = `tag-${tx.type}`;
+                const signedAmount = `${tx.type === "contribution" ? "+" : "-"}${Math.round(tx.amount).toLocaleString()}`;
                 return `
                   <tr>
-                    <td style="font-family: monospace; font-size: 10px;">${tx.displayId || tx.id}</td>
-                    <td>${dateFmt}</td>
-                    <td style="font-weight: 600;">${name}</td>
-                    <td><span class="tag ${tagClass}">${tx.type.toUpperCase()}</span></td>
-                    <td>${tx.method || "Cash"}</td>
+                    <td style="font-family: monospace; font-size: 10px;">${escapeHtml(tx.displayId || tx.id)}</td>
+                    <td>${escapeHtml(dateFmt)}</td>
+                    <td style="font-weight: 600;">${escapeHtml(name)}</td>
+                    <td><span class="tag ${tagClass}">${escapeHtml(tx.type.toUpperCase())}</span></td>
+                    <td>${escapeHtml(tx.method || "Cash")}</td>
                     <td style="text-align: right; font-weight: bold; color: ${
                       tx.type === "contribution" ? "#15803d" : "#b91c1c"
                     };">
-                      ${tx.type === "contribution" ? "+" : "-"}${Math.round(tx.amount).toLocaleString()}
+                      ${escapeHtml(signedAmount)}
                     </td>
                   </tr>
                 `;

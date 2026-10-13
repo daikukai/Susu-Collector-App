@@ -1,6 +1,21 @@
 import { useState } from "react";
 import type { Group, Member, Tx } from "../hooks/useSupabaseData";
 
+const escapeHtml = (value: unknown): string =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const formatCsvCell = (value: unknown): string => {
+  const raw = String(value ?? "");
+  const escaped = raw.replace(/"/g, '""');
+  const prefixed = /^([=+\-@])/.test(raw) ? `'${escaped}` : escaped;
+  return `"${prefixed}"`;
+};
+
 export interface AppState {
   collectorName: string;
   activeGroupId: string;
@@ -49,13 +64,13 @@ export function exportMembersCsv(
     const totalContributed = mtxs.reduce((sum, t) => sum + t.amount, 0);
 
     rows.push([
-      String(m.payoutPosition || idx + 1),
-      `"${code}"`,
-      `"${m.name.replace(/"/g, '""')}"`,
-      `"${m.phone}"`,
-      `"${(m.address || "").replace(/"/g, '""')}"`,
-      `"${groupName.replace(/"/g, '""')}"`,
-      String(totalContributed),
+      formatCsvCell(m.payoutPosition || idx + 1),
+      formatCsvCell(code),
+      formatCsvCell(m.name),
+      formatCsvCell(m.phone),
+      formatCsvCell(m.address || ""),
+      formatCsvCell(groupName),
+      formatCsvCell(totalContributed),
     ]);
   });
 
@@ -100,7 +115,7 @@ export function exportMembersPdf(
     <!DOCTYPE html>
     <html>
       <head>
-        <title>SusuBook Member Roster - ${groupName}</title>
+        <title>SusuBook Member Roster - ${escapeHtml(groupName)}</title>
         <style>
           @page { size: A4 portrait; margin: 12mm; }
           body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #0f172a; margin: 0; padding: 20px; font-size: 11px; line-height: 1.4; }
@@ -127,19 +142,19 @@ export function exportMembersPdf(
             <div class="subtitle">Official Member Roster &amp; Directory Report</div>
           </div>
           <div style="text-align: right;">
-            <div style="font-size: 12px; font-weight: bold; color: #0f172a;">${dateStr}</div>
-            <div style="font-size: 10px; color: #64748b;">Group: ${groupName}</div>
+            <div style="font-size: 12px; font-weight: bold; color: #0f172a;">${escapeHtml(dateStr)}</div>
+            <div style="font-size: 10px; color: #64748b;">Group: ${escapeHtml(groupName)}</div>
           </div>
         </div>
 
         <div class="meta-box">
           <div>
-            <div><strong>Collector Name:</strong> ${collectorName}</div>
-            <div><strong>Group Name:</strong> ${groupName}</div>
+            <div><strong>Collector Name:</strong> ${escapeHtml(collectorName)}</div>
+            <div><strong>Group Name:</strong> ${escapeHtml(groupName)}</div>
           </div>
           <div style="text-align: right;">
-            <div><strong>Total Members:</strong> ${sorted.length} member(s)</div>
-            <div><strong>Currency:</strong> ${currency}</div>
+            <div><strong>Total Members:</strong> ${escapeHtml(sorted.length)} member(s)</div>
+            <div><strong>Currency:</strong> ${escapeHtml(currency)}</div>
           </div>
         </div>
 
@@ -162,13 +177,13 @@ export function exportMembersPdf(
                 const totalContributed = mtxs.reduce((sum, t) => sum + t.amount, 0);
                 return `
                   <tr>
-                    <td style="font-weight: bold;">#${m.payoutPosition || idx + 1}</td>
-                    <td><span class="code-badge">${code}</span></td>
-                    <td style="font-weight: 600;">${m.name}</td>
-                    <td style="font-family: monospace;">${m.phone}</td>
-                    <td>${m.address || "N/A"}</td>
+                    <td style="font-weight: bold;">#${escapeHtml(m.payoutPosition || idx + 1)}</td>
+                    <td><span class="code-badge">${escapeHtml(code)}</span></td>
+                    <td style="font-weight: 600;">${escapeHtml(m.name)}</td>
+                    <td style="font-family: monospace;">${escapeHtml(m.phone)}</td>
+                    <td>${escapeHtml(m.address || "N/A")}</td>
                     <td style="text-align: right; font-weight: bold; color: #059669;">
-                      ${Math.round(totalContributed).toLocaleString()}
+                      ${escapeHtml(Math.round(totalContributed).toLocaleString())}
                     </td>
                   </tr>
                 `;

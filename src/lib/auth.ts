@@ -1,9 +1,8 @@
 import { supabase } from "./supabase";
 import type { Session, User } from "@supabase/supabase-js";
-import { clearAllOfflineData } from "./db";
+import { clearAllOfflineData, getUnsyncedCount } from "./db";
 
-export const SUPER_ADMIN_PHONE = import.meta.env.VITE_SUPER_ADMIN_PHONE || "+231886884019";
-export const ADMIN_WHATSAPP_PHONE = import.meta.env.VITE_ADMIN_WHATSAPP_PHONE || "+231778445619";
+export const ADMIN_WHATSAPP_PHONE = import.meta.env.VITE_ADMIN_WHATSAPP_PHONE;
 
 export interface Collector {
   id: string;
@@ -91,17 +90,13 @@ export function saveLocalCollector(collectorObj: Collector) {
 export async function signUpWithPhone(phone: string, password: string, inviteCode?: string) {
   const normalizedPhone = normalizePhone(phone);
   const authEmail = phoneToAuthEmail(phone);
-  const isSuperAdmin = normalizedPhone === SUPER_ADMIN_PHONE;
 
-  // Enforce invite redemption prior to Auth registration for non-admins
-  if (!isSuperAdmin) {
-    if (!inviteCode) {
-      throw new Error("An invitation access key is required to register a new collector account.");
-    }
-    const redeemed = await redeemInviteCode(inviteCode, normalizedPhone);
-    if (!redeemed) {
-      throw new Error("Invitation access key verification failed. Please check your key or contact Admin.");
-    }
+  if (!inviteCode) {
+    throw new Error("An invitation access key is required to register a new collector account.");
+  }
+  const redeemed = await redeemInviteCode(inviteCode, normalizedPhone);
+  if (!redeemed) {
+    throw new Error("Invitation access key verification failed. Please check your key or contact Admin.");
   }
 
   let signUpRes = await supabase.auth.signUp({
@@ -165,24 +160,16 @@ export async function signUpWithPhone(phone: string, password: string, inviteCod
   if (sessionUser) {
     const newColObj: Collector = {
       id: sessionUser.id,
-      name: isSuperAdmin ? "Master Admin" : `Collector (${normalizedPhone})`,
+      name: `Collector (${normalizedPhone})`,
       phone: normalizedPhone,
-      is_super_admin: isSuperAdmin,
       created_at: new Date().toISOString(),
     };
     saveLocalCollector(newColObj);
 
     try {
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("susu_active_user", JSON.stringify(sessionUser));
-      }
-    } catch {}
-
-    try {
       await createCollector(sessionUser.id, {
         name: newColObj.name,
         phone: normalizedPhone,
-        is_super_admin: isSuperAdmin,
       });
     } catch (err) {
       // Silently handle auto create collector errors
@@ -196,7 +183,6 @@ export async function signUpWithPhone(phone: string, password: string, inviteCod
 export async function signInWithPhone(phone: string, password: string) {
   const normalizedPhone = normalizePhone(phone);
   const authEmail = phoneToAuthEmail(phone);
-  const isAdminPhone = normalizedPhone === SUPER_ADMIN_PHONE;
 
   try {
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -208,9 +194,8 @@ export async function signInWithPhone(phone: string, password: string) {
     if (data.user) {
       const colObj: Collector = {
         id: data.user.id,
-        name: isAdminPhone ? "Master Admin" : `Collector (${normalizedPhone})`,
+        name: `Collector (${normalizedPhone})`,
         phone: normalizedPhone,
-        is_super_admin: isAdminPhone,
         created_at: new Date().toISOString(),
       };
       saveLocalCollector(colObj);
@@ -218,37 +203,13 @@ export async function signInWithPhone(phone: string, password: string) {
         await createCollector(data.user.id, {
           name: colObj.name,
           phone: normalizedPhone,
-          is_super_admin: isAdminPhone,
         });
       } catch {
         // Graceful notice
       }
     }
     return data;
-  } catch (err: any) {
-    // If it's the designated Super-Admin phone number trying to sign in for the first time
-    if (isAdminPhone) {
-      try {
-        const signUpRes = await signUpWithPhone(phone, password);
-        if (signUpRes.user) {
-          await createCollector(signUpRes.user.id, {
-            name: "Master Admin",
-            business_name: "SusuBook Platform Command Center",
-            phone: normalizedPhone,
-            is_super_admin: true,
-          });
-        }
-        const { data: signInData } = await supabase.auth.signInWithPassword({
-          email: authEmail,
-          password,
-        });
-        return signInData;
-      } catch (autoCreateErr: any) {
-        if (autoCreateErr?.message?.toLowerCase().includes("already registered") || autoCreateErr?.status === 422) {
-          throw new Error(`Invalid password for Master Admin (${SUPER_ADMIN_PHONE}). Please re-enter your registered password or request a reset code.`);
-        }
-      }
-    }
+  } catch (err) {
     throw err;
   }
 }
@@ -268,7 +229,16 @@ export async function signIn(email: string, password: string) {
 }
 
 // Sign out
-export async function signOut() {
+export async function signOut(options?: { force?: boolean }) {
+  const unsyncedCount = await getUnsyncedCount();
+  if (unsyncedCount > 0 && !options?.force) {
+    const error = new Error(
+      `${unsyncedCount} unsynced record${unsyncedCount === 1 ? "" : "s"} will be lost if you sign out now.`
+    ) as Error & { unsyncedCount?: number };
+    error.unsyncedCount = unsyncedCount;
+    throw error;
+  }
+
   try {
     await clearAllOfflineData();
   } catch (err) {
@@ -309,7 +279,6 @@ export async function deleteAccount(userId?: string) {
         localStorage.setItem("susu_registered_collectors", JSON.stringify(filtered));
       }
       sessionStorage.clear();
-      localStorage.removeItem("susu_active_user");
     } catch {}
   }
 
@@ -356,10 +325,6 @@ export async function getCollector(userId: string): Promise<Collector | null> {
       return local || null;
     }
 
-    if (data && data.phone === SUPER_ADMIN_PHONE) {
-      return { ...local, ...data, is_super_admin: true };
-    }
-
     return { ...local, ...data };
   } catch {
     return local || null;
@@ -390,7 +355,7 @@ export async function createCollector(
       }
     } catch {}
   }
-  const isSuperAdmin = profileData.is_super_admin ?? existingLocal?.is_super_admin ?? (phoneToSave === SUPER_ADMIN_PHONE);
+  const isSuperAdmin = profileData.is_super_admin ?? existingLocal?.is_super_admin;
 
   const localColObj: Collector = {
     id: userId,
@@ -484,13 +449,13 @@ export async function updateCollectorProfile(
 
 /**
  * 🔒 ZERO-COST PRIVATE WHATSAPP PASSWORD RECOVERY
- * Generates 1-time verification OTP and formats a private WhatsApp deep-link
- * targeted to the Admin WhatsApp number (+231778445619) ($0 SMS cost, 100% private).
+ * Generates a secure OTP and emits a WhatsApp deep-link when an admin support number is configured.
  */
 export async function requestPasswordResetOtp(phone: string): Promise<{ success: boolean; whatsappUrl: string; message: string }> {
   const normalized = normalizePhone(phone);
-  const cleanAdminPhone = normalizePhone(ADMIN_WHATSAPP_PHONE).replace(/[^\d]/g, "");
-  
+  const adminWhatsAppNumber = ADMIN_WHATSAPP_PHONE;
+  const cleanAdminPhone = adminWhatsAppNumber ? normalizePhone(adminWhatsAppNumber).replace(/[^\d]/g, "") : "";
+
   // Generate secure 6-digit verification OTP
   const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes validity
@@ -502,8 +467,10 @@ export async function requestPasswordResetOtp(phone: string): Promise<{ success:
 
   return {
     success: true,
-    whatsappUrl,
-    message: `Reset PIN generated! Click "Send via Admin WhatsApp" below to send your request to Admin (+231778445619).`,
+    whatsappUrl: whatsappUrl || "",
+    message: adminWhatsAppNumber
+      ? `Reset PIN generated! Click "Send via Admin WhatsApp" below to send your request to Admin.`
+      : "Reset PIN generated! Contact your configured admin contact to verify and reset your password.",
   };
 }
 
@@ -543,7 +510,11 @@ export async function verifyOtpAndResetPassword(
     try {
       await signInWithPhone(normalized, newPassword);
     } catch {
-      throw new Error(`Password reset request verified. If locked out, contact Admin (${ADMIN_WHATSAPP_PHONE}) for account recovery.`);
+      throw new Error(
+        ADMIN_WHATSAPP_PHONE
+          ? `Password reset request verified. If locked out, contact Admin (${ADMIN_WHATSAPP_PHONE}) for account recovery.`
+          : "Password reset request verified. If locked out, contact your configured admin support for account recovery."
+      );
     }
   }
 
@@ -696,7 +667,12 @@ export async function validateInviteCode(rawCode: string): Promise<{ valid: bool
     };
   }
 
-  return { valid: false, message: `Invalid invite code "${code}". Contact Admin (${ADMIN_WHATSAPP_PHONE}) to request an authorized key.` };
+  return {
+    valid: false,
+    message: ADMIN_WHATSAPP_PHONE
+      ? `Invalid invite code "${code}". Contact Admin (${ADMIN_WHATSAPP_PHONE}) to request an authorized key.`
+      : `Invalid invite code "${code}". Contact your configured admin contact to request an authorized key.`,
+  };
 }
 
 // Redeem invite code on successful registration
@@ -755,7 +731,9 @@ export async function adminResetUserPassword(phone: string, newPassword: string,
 
 // Delete collector account (Master Admin Control)
 export async function deleteCollectorAccount(collectorId: string): Promise<boolean> {
-  const { error } = await supabase.from("collectors").delete().eq("id", collectorId);
+  const { error } = await supabase.rpc("delete_account_cascade", {
+    target_user_id: collectorId,
+  });
   return !error;
 }
 
@@ -785,18 +763,15 @@ export async function getSuperAdminStats(): Promise<{
 
     const rawList: Collector[] = collectors || [];
     const localCols = getLocalCollectors();
-    const localCodes = getLocalCustomInviteCodes();
 
     // Map to aggregate collectors by unique phone or id
     const registeredPhoneMap = new Map<string, Collector>();
 
-    // 1. Add DB collectors from Supabase
     rawList.forEach((c) => {
       const key = c.phone || c.id;
       registeredPhoneMap.set(key, c);
     });
 
-    // 2. Add Local collectors from browser storage
     localCols.forEach((lc) => {
       const key = lc.phone || lc.id;
       const existing = registeredPhoneMap.get(key);
@@ -807,31 +782,8 @@ export async function getSuperAdminStats(): Promise<{
       }
     });
 
-    // 3. Extract all phone numbers from redeemed access keys in Supabase DB & Local Cache
-    const allInviteCodes = [...(inviteCodes || []), ...localCodes];
-    allInviteCodes.forEach((ic) => {
-      if (ic.used_by_phone) {
-        const phone = ic.used_by_phone;
-        const key = phone;
-        if (!registeredPhoneMap.has(key)) {
-          const generatedCol: Collector = {
-            id: `col-${phone.replace(/[^\d]/g, "")}`,
-            name: `Collector (${phone})`,
-            business_name: "Independent Susu Collector",
-            business_address: "Liberia",
-            phone: phone,
-            is_super_admin: phone === "+231886884019" || phone.includes("886884019"),
-            created_at: ic.used_at || ic.created_at || new Date().toISOString(),
-          };
-          registeredPhoneMap.set(key, generatedCol);
-          saveLocalCollector(generatedCol);
-        }
-      }
-    });
-
     const combinedDbAndLocal = Array.from(registeredPhoneMap.values());
 
-    // Map each collector to calculate their stats
     const enrichedList: Collector[] = combinedDbAndLocal.map((col) => {
       const colGroupIds = (groups || []).filter((g) => g.collector_id === col.id).map((g) => g.id);
       const colMembersCount = (members || []).filter((m) => colGroupIds.includes(m.group_id)).length;
@@ -845,61 +797,16 @@ export async function getSuperAdminStats(): Promise<{
       };
     });
 
-    // Preset Platform Accounts fallback if only master account or clean state is present
-    const demoAccounts: Collector[] = [
-      {
-        id: "demo-col-1",
-        name: "Tony Merchant",
-        business_name: "Waterside Market Association",
-        phone: "+231880112233",
-        is_super_admin: false,
-        created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
-        groups_count: 3,
-        members_count: 42,
-        transactions_count: 184,
-      },
-      {
-        id: "demo-col-2",
-        name: "Fatima Kamara",
-        business_name: "Red Light Commercial Susu",
-        phone: "+231775443322",
-        is_super_admin: false,
-        created_at: new Date(Date.now() - 86400000 * 15).toISOString(),
-        groups_count: 2,
-        members_count: 28,
-        transactions_count: 96,
-      },
-      {
-        id: "demo-col-3",
-        name: "Moses Johnson",
-        business_name: "Sinkor Micro Savings",
-        phone: "+231886998877",
-        is_super_admin: false,
-        created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
-        groups_count: 1,
-        members_count: 14,
-        transactions_count: 35,
-      },
-    ];
-
-    // Combine all registered accounts with demo accounts so Super Admin sees all real + demo accounts
-    const combinedList = [...enrichedList];
-    demoAccounts.forEach((d) => {
-      if (!combinedList.some((e) => e.phone === d.phone || e.id === d.id)) {
-        combinedList.push(d);
-      }
-    });
-
-    const totalGroups = groups?.length || combinedList.reduce((acc, c) => acc + (c.groups_count || 0), 0);
-    const totalMembers = members?.length || combinedList.reduce((acc, c) => acc + (c.members_count || 0), 0);
-    const totalTransactions = txs?.length || combinedList.reduce((acc, c) => acc + (c.transactions_count || 0), 0);
+    const totalGroups = groups?.length || 0;
+    const totalMembers = members?.length || 0;
+    const totalTransactions = txs?.length || 0;
 
     return {
-      totalCollectors: combinedList.length,
+      totalCollectors: enrichedList.length,
       totalGroups,
       totalMembers,
       totalTransactions,
-      collectorsList: combinedList,
+      collectorsList: enrichedList,
     };
   } catch (err) {
     // Silently handle stats fetch errors

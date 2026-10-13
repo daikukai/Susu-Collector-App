@@ -2835,6 +2835,7 @@ export default function App({ collectorName = "Collector" }: AppProps) {
   const closeCycle = useCloseCycle();
   
   // Local state for UI
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [activeGroupId, setActiveGroupId] = useState("");
   const [tab, setTab] = useState<NavTab>("today");
   const [collectSub, setCollectSub] = useState("Roster");
@@ -3230,6 +3231,11 @@ export default function App({ collectorName = "Collector" }: AppProps) {
         {showProfileModal && <UserProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} />}
         {showMasterAdminModal && <MasterAdminPortal isOpen={showMasterAdminModal} onClose={() => setShowMasterAdminModal(false)} />}
       </Suspense>
+      {toastMsg && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-red-600 text-white text-xs font-semibold rounded-lg shadow-lg">
+          {toastMsg}
+        </div>
+      )}
     </div>
   );
 }

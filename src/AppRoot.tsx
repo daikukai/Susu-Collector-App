@@ -8,8 +8,8 @@ export default function AppRoot() {
   const { user, collector, loading, refreshCollector, signOut } = useAuth();
 
   const isNewSignup = typeof window !== "undefined" && sessionStorage.getItem("susu_is_new_signup") === "true";
-
-  const isSuperAdminUser = user && (user.phone === "+231886884019" || user.user_metadata?.phone === "+231886884019");
+  const isSuperAdminUser = Boolean(collector?.is_super_admin);
+  const adminContactWhatsApp = import.meta.env.VITE_ADMIN_WHATSAPP_PHONE;
 
   return (
     <>
@@ -36,14 +36,20 @@ export default function AppRoot() {
               Your account has not been authorized with a redeemed invitation access key. Direct registration outside the invitation workflow is restricted.
             </p>
             <div className="space-y-3">
-              <a
-                href={`https://wa.me/231778445619?text=${encodeURIComponent("Hello Admin, I need an invitation access key for SusuBook.")}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition-all text-center"
-              >
-                💬 Request Invitation Key via Admin WhatsApp
-              </a>
+              {adminContactWhatsApp ? (
+                <a
+                  href={`https://wa.me/${adminContactWhatsApp.replace(/[^\d]/g, "")}?text=${encodeURIComponent("Hello Admin, I need an invitation access key for SusuBook.")}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition-all text-center"
+                >
+                  💬 Request Invitation Key via Admin WhatsApp
+                </a>
+              ) : (
+                <div className="block w-full py-3 bg-slate-800 text-slate-300 font-bold text-xs rounded-xl text-center">
+                  💬 Contact your configured admin support for an invitation key.
+                </div>
+              )}
               <button
                 onClick={() => signOut()}
                 className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-xl transition-all"

@@ -133,15 +133,7 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
     setResettingPassword(true);
     try {
       await adminResetUserPassword(resetModalCol.phone, newPasswordInput, resetModalCol.id);
-      setSuccessMessage(`Password / PIN for collector "${resetModalCol.name}" updated successfully to "${newPasswordInput}".`);
-      
-      // Update local state stats immediately
-      setStats((prev) => ({
-        ...prev,
-        collectorsList: prev.collectorsList.map((c) =>
-          c.id === resetModalCol.id ? { ...c, password: newPasswordInput } : c
-        ),
-      }));
+      setSuccessMessage(`Password / PIN for collector "${resetModalCol.name}" was updated successfully.`);
 
       setResetModalCol(null);
       setNewPasswordInput("");
@@ -209,7 +201,11 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
     }
     setDeletingId(col.id);
     try {
-      await deleteCollectorAccount(col.id);
+      const ok = await deleteCollectorAccount(col.id);
+      if (!ok) {
+        alert("Failed to delete collector account. Please check the server response and try again.");
+        return;
+      }
       setStats((prev) => ({
         ...prev,
         totalCollectors: prev.totalCollectors - 1,
@@ -227,7 +223,11 @@ export default function MasterAdminPortal({ isOpen, onClose }: MasterAdminPortal
   const handleToggleAdminRole = async (col: Collector) => {
     const newRole = !col.is_super_admin;
     try {
-      await toggleSuperAdminRole(col.id, newRole);
+      const ok = await toggleSuperAdminRole(col.id, newRole);
+      if (!ok) {
+        alert("Failed to update the collector role. Please check the server response and try again.");
+        return;
+      }
       setStats((prev) => ({
         ...prev,
         collectorsList: prev.collectorsList.map((c) =>

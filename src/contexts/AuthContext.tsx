@@ -39,16 +39,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (currentSession?.user) return { session: currentSession, user: currentSession.user };
     } catch {}
 
-    try {
-      if (typeof window !== "undefined") {
-        const stored = sessionStorage.getItem("susu_active_user") || localStorage.getItem("susu_active_user");
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed?.id) return { session: null, user: parsed as User };
-        }
-      }
-    } catch {}
-
     return { session: null, user: null };
   };
 
@@ -112,7 +102,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const handleSignOut = async () => {
-    await signOut();
+    try {
+      await signOut();
+    } catch (error: any) {
+      const unsyncedCount = Number(error?.unsyncedCount || 0);
+      if (unsyncedCount > 0 && typeof window !== "undefined") {
+        const confirmed = window.confirm(
+          `${unsyncedCount} unsynced record${unsyncedCount === 1 ? "" : "s"} will be lost. Are you sure you want to sign out?`
+        );
+        if (!confirmed) {
+          return;
+        }
+        await signOut({ force: true });
+      } else {
+        throw error;
+      }
+    }
     setSession(null);
     setUser(null);
     setCollector(null);

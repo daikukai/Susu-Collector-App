@@ -59,6 +59,10 @@ export async function getPendingQueueCount(): Promise<number> {
   return await db.syncQueue.where("status").equals("pending").count();
 }
 
+export async function getUnsyncedCount(): Promise<number> {
+  return await db.syncQueue.where("status").equals("pending").count();
+}
+
 export async function clearSyncQueue(): Promise<void> {
   await db.syncQueue.clear();
 }

@@ -17,6 +17,7 @@ interface LoginProps {
 type AuthMode = "invite_gate" | "sign_in" | "sign_up";
 
 export default function Login({ onSuccess }: LoginProps) {
+  const adminSupportWhatsApp = import.meta.env.VITE_ADMIN_WHATSAPP_PHONE;
   const [mode, setMode] = useState<AuthMode>("sign_in");
 
   // Form input states
@@ -540,15 +541,21 @@ export default function Login({ onSuccess }: LoginProps) {
               </div>
 
               <div className="space-y-3">
-                <a
-                  href={`https://wa.me/231778445619?text=${encodeURIComponent("Hello Admin Support, I am requesting assistance resetting my SusuBook collector account password.")}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95"
-                >
-                  <span className="text-base">💬</span>
-                  <span>Contact Support on WhatsApp (+231778445619)</span>
-                </a>
+                {adminSupportWhatsApp ? (
+                  <a
+                    href={`https://wa.me/${adminSupportWhatsApp.replace(/[^\d]/g, "")}?text=${encodeURIComponent("Hello Admin Support, I am requesting assistance resetting my SusuBook collector account password.")}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95"
+                  >
+                    <span className="text-base">💬</span>
+                    <span>Contact Support on WhatsApp</span>
+                  </a>
+                ) : (
+                  <div className="w-full bg-slate-800 text-slate-300 font-semibold text-xs py-3.5 px-4 rounded-xl text-center">
+                    Contact your configured Admin Support to reset access.
+                  </div>
+                )}
 
                 <button
                   type="button"
